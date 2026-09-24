@@ -39,6 +39,10 @@ DSH Profile 通过包名组合此插件。配置行示例：
 
 部署包改动到 DSH Web Profile 时，按该运行环境已有的插件检查与重启流程执行。本次建仓没有部署到 Profile，也没有进行端到端通知测试。
 
+## 兼容性
+
+当前 bundle 使用 0.1.7-alpha.1 时代的 uiSession.sessionStatus 与 connection.state 契约，没有回退到历史字段名的兼容分支。超出这些契约范围的运行时兼容性为 **UNVERIFIED**；当前没有独立兼容矩阵。详见 [docs/compatibility.md](docs/compatibility.md)。
+
 ## 构建与测试状态
 
 当前包没有独立构建或测试流水线：manifest 未声明 scripts，包内也没有 src、test 或 build 目录。已提交的 Client 文件本身就是 DSH loader bundle。可以运行 Node JavaScript 语法检查，但它不能代替 Host/plugin 集成检查或真实通知验证。

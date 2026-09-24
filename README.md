@@ -39,6 +39,10 @@ Open Settings → General → System notifications. In the workbench, the row re
 
 When deploying a package change to a DSH Web profile, use that environment's plugin validation and restart workflow. No profile deployment or end-to-end notification test was performed while creating this repository.
 
+## Compatibility
+
+This bundle consumes the 0.1.7-alpha.1-era uiSession.sessionStatus and connection.state contracts. It has no fallback to the historical field names. Runtime support outside those contracts is **UNVERIFIED**; there is no independent compatibility matrix. See [docs/compatibility.md](docs/compatibility.md) for the source-level details.
+
 ## Build and test status
 
 There is currently no independent build or test pipeline for this package: the manifest declares no scripts, and the package has no src, test, or build directory. The checked-in Client file is already the DSH loader bundle. Static JavaScript syntax checks with Node are feasible; they do not replace host/plugin integration or real notification testing.
