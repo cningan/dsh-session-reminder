@@ -25,3 +25,11 @@ The current child source uses the later `uiSession.sessionStatus` map and reads 
 **Version record:** the historical report states `0.3.1 → 0.4.0`; the current manifest states `0.3.1`. These values differ. This note preserves both as recorded and does not infer a release or version chronology.
 
 **Validation record:** the historical report records syntax and `plugin_check` passes. It also explicitly says the wait notification was not tested on a real device; the user judged the logic sufficient and treated it as passed. That was a user acceptance judgment, not an observed notification test. These are historical results, not validation of the current child checkout.
+
+## Repository source snapshot validation (historical; date not recorded)
+
+The previous code map recorded that Node JavaScript syntax checks were run against `lib/index.js` and `lib/client.js` during repository initialization. It also recorded that no `plugin_check`, Profile restart, or real notification end-to-end test was performed. This is a historical setup report, not validation of the current checkout.
+
+## Terminal-detail fallback note
+
+An earlier code-map note said that a missing current-session detail object could make the terminal status edge report a placeholder interruption reason. The inspected current source instead supplies `{ running: false }` at the status-edge fallback ([source](../lib/client.js#L584)); without other error fields, the classifier treats that as normal completion. The notes and source disagree, and the real runtime case remains unverified. See [SPEC.md](../SPEC.md) for the current source-level contract and ambiguity.

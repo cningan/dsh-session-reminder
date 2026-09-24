@@ -2,11 +2,13 @@
 
 English | [中文](README.zh.md)
 
+Canonical behavior, invariants, and code map: [SPEC.md](SPEC.md).
+
 ## What it does
 
 This DSH Web client plugin sends operating-system notifications for the **current session**. It covers an approval, plan-review, or question wait; the end of a run; an interrupted or failed run; and a lost DSH connection. It does not draw reminder cards, toasts, or a status overlay inside the page. Background-session completion is intentionally ignored.
 
-Notifications are normally emitted only when the DSH page is hidden or unfocused. Clicking one focuses DSH and selects its owning session. The settings self-check is the intentional foreground exception and sends a fixed test payload without changing session state.
+Notifications are normally emitted only when the DSH page is hidden or unfocused. Clicking a browser notification asks DSH to open its session and focuses the window; native-bridge click handling belongs to the external workbench and is not verified here. The settings self-check is the intentional foreground exception and sends a fixed test payload without changing session state.
 
 The plugin uses the official session list, current-session status/scope, current-session detail, and connection state. DSH remains the owner of session truth and reconnection. The plugin keeps only ephemeral edge-deduplication and notification-capability state; it does not persist session state or serialize whole session objects.
 
@@ -14,7 +16,7 @@ The plugin uses the official session list, current-session status/scope, current
 
 - In the DSH workbench, the client tries the optional shell notification bridge. The workbench owns native Windows presentation and taskbar flashing.
 - In a direct browser visit, it uses the browser Notification API when permission is available.
-- Both paths request sound, but browser/WebView and Windows settings remain authoritative; this plugin cannot override mute, Focus Assist, or volume settings.
+- Browser notifications set `silent: false` to request platform sound. The native bridge payload has no sound field, so its sound behavior belongs to the external workbench. Browser/WebView and Windows settings remain authoritative; this plugin cannot override mute, Focus Assist, or volume settings.
 
 The shell implementation is an external integration boundary and is not included in this repository.
 
@@ -35,7 +37,7 @@ This repository is the maintained source location. A deployed profile is an exte
 
 ## Enable and check
 
-Open Settings → General → System notifications. In the workbench, the row reports whether the native bridge is connected. In a direct browser, grant notification permission using the row's enable action. Use Send test notification to exercise the available delivery path.
+Open Settings → General → System notifications. In the workbench, the row reports whether a native bridge is available. In a direct browser, grant notification permission using the enable action in the row. Use Send test notification to exercise the available delivery path.
 
 When deploying a package change to a DSH Web profile, use that environment's plugin validation and restart workflow. No profile deployment or end-to-end notification test was performed while creating this repository.
 
@@ -51,5 +53,5 @@ There is currently no independent build or test pipeline for this package: the m
 
 - Browser notification permission and sound are controlled by the browser/WebView and operating system.
 - The native workbench path depends on the optional shell bridge; that bridge's source and build pipeline are outside this repository.
-- If DSH has not materialized the current session's detail object, terminal classification falls back to the status edge and may report a placeholder interruption reason. This is known debt, not changed by repository setup.
+- If a current-session detail object is unavailable when only a status edge arrives, the current code supplies a minimal detail snapshot without error fields. That path can classify an abnormal run as completed. An earlier note said this could show a placeholder interruption reason, which does not match the inspected source; the edge case remains unverified at runtime.
 - Durable session truth and connection recovery remain owned by DSH.
