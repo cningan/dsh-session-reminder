@@ -43,7 +43,7 @@ When deploying a package change to a DSH Web profile, use that environment's plu
 
 ## Compatibility
 
-This bundle consumes the 0.1.7-alpha.1-era uiSession.sessionStatus and connection.state contracts. It has no fallback to the historical field names. Runtime support outside those contracts is **UNVERIFIED**; there is no independent compatibility matrix. See [docs/compatibility.md](docs/compatibility.md) for the source-level details.
+This bundle consumes the `uiSession.sessionStatus` and `connection.state` contracts. Runtime support outside them is unverified; see [docs/compatibility.md](docs/compatibility.md) for the current compatibility boundary.
 
 ## Build and test status
 
@@ -53,5 +53,5 @@ There is currently no independent build or test pipeline for this package: the m
 
 - Browser notification permission and sound are controlled by the browser/WebView and operating system.
 - The native workbench path depends on the optional shell bridge; that bridge's source and build pipeline are outside this repository.
-- If a current-session detail object is unavailable when only a status edge arrives, the current code supplies a minimal detail snapshot without error fields. That path can classify an abnormal run as completed. An earlier note said this could show a placeholder interruption reason, which does not match the inspected source; the edge case remains unverified at runtime.
+- If a current-session detail object is unavailable when only a status edge arrives, the code supplies a minimal detail snapshot without error fields; this can classify an abnormal run as completed. Runtime behavior remains unverified.
 - Durable session truth and connection recovery remain owned by DSH.
