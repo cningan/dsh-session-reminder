@@ -16,3 +16,12 @@ The adaptation note records that the old request key disappeared and that one pe
 The current bundle consumes the new-side fields above and implements no fallback to the historical field names. The adaptation note is the source for the historical side; the current bundle verifies only the new-side reads. This note does not claim runtime compatibility with earlier DSH versions.
 
 The adaptation note says connecting is not a disconnected state. Separately, the current package suppresses loss notices before the first connected state; after a connection has existed, connecting enters the same deduplicated loss path as other non-connected states. These are different layers: the API state label alone does not define the package's notification policy.
+## Historical repair: DSH 0.1.5 wait notification
+
+The 2026-09-14 maintenance record says wait notifications failed after the plugin read `pendingInteraction` from session-list rows, where the field no longer existed in the DSH 0.1.5 contract. The recorded replacement was `ctx.uiSession.pendingInteractions`, an observable map of pending objects carrying `key`, `kind`, and `sessionId`. This describes that historical repair, not the current hook.
+
+The current child source uses the later `uiSession.sessionStatus` map and reads each status's `pendingInteraction`; it subscribes to `uiSession.sessionStatus` and contains no runtime read of `uiSession.pendingInteractions`. See [current status reader](../lib/client.js#L505-L517), [current wait handling](../lib/client.js#L557-L577), and [subscription](../lib/client.js#L681-L685). The current manifest is version `0.3.1` ([package.json](../package.json#L4)).
+
+**Version record:** the historical report states `0.3.1 → 0.4.0`; the current manifest states `0.3.1`. These values differ. This note preserves both as recorded and does not infer a release or version chronology.
+
+**Validation record:** the historical report records syntax and `plugin_check` passes. It also explicitly says the wait notification was not tested on a real device; the user judged the logic sufficient and treated it as passed. That was a user acceptance judgment, not an observed notification test. These are historical results, not validation of the current child checkout.
