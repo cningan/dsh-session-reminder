@@ -58,7 +58,7 @@ DSH Profile 通过包名组合该包；其 Profile 配置不在此处维护。�
 | package.json | 包标识/版本/exports；DSH Web Client 平台与注入的运行时依赖。 |
 | lib/index.js | 空 Host shim：inject = [] 且 apply() {}；行为由 Client 掌握。 |
 | lib/client.js | 通过 window.__ModuleLoader__.load 完成 loader 注册，React 经 loader 获取；全会话 run/等待边沿状态、选中会话 SessionSnapshot 与 eventSource 分类、投递能力检测、重连重新同步、shell/浏览器适配器、Settings 槽行、内嵌 CSS 与生命周期清理。这是已检入的 Client bundle，不是本仓库中由源码生成的构建目标。 |
-| README.md | 面向用户的中文用途说明、启用方式、限制及指向本规范的链接。 |
+| [README.md](README.md) / [README.zh.md](README.zh.md) | 面向用户的双语（英文/中文）用途说明、启用方式、限制及指向本规范的链接。 |
 | CONTEXT.md | 会话提醒术语的共享领域词汇表；不含实现时间线或 API 清单。 |
 | docs/compatibility.md | 源码级兼容性观察，以及历史适配/修复与验证记录；不是运行时支持矩阵。 |
 | .gitignore | 排除本地依赖、环境文件、日志、缓存、覆盖率与 dist 输出。 |
