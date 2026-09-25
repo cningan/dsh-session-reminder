@@ -6,16 +6,16 @@ Canonical behavior, invariants, and code map: [SPEC.md](SPEC.md).
 
 ## What it does
 
-This DSH Web client plugin sends operating-system notifications for the **current session**. It covers an approval, plan-review, or question wait; the end of a run; an interrupted or failed run; and a lost DSH connection. It does not draw reminder cards, toasts, or a status overlay inside the page. Background-session completion is intentionally ignored.
+This DSH Web Client plugin sends attention reminders for **every observed running session**, including sessions not currently selected. It distinguishes a wait for approval, plan review, or a question from a completed, interrupted, failed, or otherwise unclassified stop. A stop with insufficient cause data is reported generically rather than mislabeled as successful completion. An observed turn explicitly attributed to user cancellation is silent. An explicitly removed selected session is silent when that detail is available; a missing list row suppresses its terminal edge to avoid removal/archive notices. Background removal detail is not read. It does not draw reminder cards or a status overlay inside the page; a global DSH connection loss is not treated as a session stop.
 
-Notifications are normally emitted only when the DSH page is hidden or unfocused. Clicking a browser notification asks DSH to open its session and focuses the window; native-bridge click handling belongs to the external workbench and is not verified here. The settings self-check is the intentional foreground exception and sends a fixed test payload without changing session state.
+Reminders are emitted only when the corresponding DSH page/window is hidden or unfocused; selection of a session does not limit which running sessions are watched. Clicking a browser notification asks DSH to open its session and focuses the window; native-bridge click handling belongs to the external workbench and is not verified here. The settings self-check is the intentional foreground exception and sends a fixed test payload without changing session state.
 
-The plugin uses the official session list, current-session status/scope, current-session detail, and connection state. DSH remains the owner of session truth and reconnection. The plugin keeps only ephemeral edge-deduplication and notification-capability state; it does not persist session state or serialize whole session objects.
+The plugin uses the official session list and all-session status map, plus the selected session's `SessionSnapshot` and `eventSource` when available. An unread-completion marker alone neither triggers a notice nor proves success; only an observed running-to-stopped edge is actionable, and absent `turn/end` cause data stays generic. Other sessions are never opened just to obtain detail or event history. Connection state is used only to re-sync after reconnection. DSH remains the owner of session truth and recovery. The plugin keeps only ephemeral edge-deduplication and delivery-capability state; it does not persist session state or serialize whole session objects.
 
 ## Delivery paths
 
-- In the DSH workbench, the client tries the optional shell notification bridge. The workbench owns native Windows presentation and taskbar flashing.
-- In a direct browser visit, it uses the browser Notification API when permission is available.
+- In the DSH workbench, the client tries `window.dshShell.notify(payload)`, then `window.chrome.webview.postMessage(payload)`. The checked Desktop bundle exposes no plugin-callable flash-only API; its `flashFrame` calls are private to modal UI. The inspected preload exposes `dshDesktop`, but no notification method was found; availability of the optional `dshShell`/WebView notification bridges in a target runtime is unverified. A flash-only route would require a DSH core/preload change, which the user declined, so this plugin keeps its existing bridge path and falls back to browser notifications if no bridge is exposed or all exposed bridges throw. A silent no-op from an exposed bridge cannot be detected.
+- If neither workbench bridge succeeds, it falls back to the browser Notification API when browser permission is granted; in a direct browser, that is the primary path.
 - Browser notifications set `silent: false` to request platform sound. The native bridge payload has no sound field, so its sound behavior belongs to the external workbench. Browser/WebView and Windows settings remain authoritative; this plugin cannot override mute, Focus Assist, or volume settings.
 
 The shell implementation is an external integration boundary and is not included in this repository.
@@ -37,21 +37,21 @@ This repository is the maintained source location. A deployed profile is an exte
 
 ## Enable and check
 
-Open Settings → General → System notifications. In the workbench, the row reports whether a native bridge is available. In a direct browser, grant notification permission using the enable action in the row. Use Send test notification to exercise the available delivery path.
+Open Settings → General → Session reminders. The row reports a recognized workbench bridge or browser-notification permission state; when the bridge is absent, the browser path can still be enabled if supported. Use Send test reminder to exercise the available delivery path.
 
-When deploying a package change to a DSH Web profile, use that environment's plugin validation and restart workflow. No profile deployment or end-to-end notification test was performed while creating this repository.
+The local `desktop` Profile plugin copy has been updated. The automatic session-stop path still requires an end-to-end check in a separate DSH session; do not treat the settings self-check or unit tests as that validation.
 
 ## Compatibility
 
-This bundle consumes the `uiSession.sessionStatus` and `connection.state` contracts. Runtime support outside them is unverified; see [docs/compatibility.md](docs/compatibility.md) for the current compatibility boundary.
+This bundle consumes `uiSession.sessionStatus`, `connection.state`, the selected binding's `eventSource`, and official `SessionSnapshot` error fields; it does not depend on undocumented `nodes`. The Host `SessionEventWindow` schema has `events` and `target`, but the Client binding's exact window/lifetime contract remains unverified; missing or mismatched event data degrades to a generic notice. See [docs/compatibility.md](docs/compatibility.md).
 
 ## Build and test status
 
-There is currently no independent build or test pipeline for this package: the manifest declares no scripts, and the package has no src, test, or build directory. The checked-in Client file is already the DSH loader bundle. Static JavaScript syntax checks with Node are feasible; they do not replace host/plugin integration or real notification testing.
+Run `npm test` for the built-in Node test suite covering session edges, terminal reasons, channel detection, foreground rules, and connection-loss suppression. The checked-in Client file is already the DSH loader bundle; tests do not replace host/plugin integration or real notification testing.
 
 ## Known limitations
 
 - Browser notification permission and sound are controlled by the browser/WebView and operating system.
-- The native workbench path depends on the optional shell bridge; that bridge's source and build pipeline are outside this repository.
-- If a current-session detail object is unavailable when only a status edge arrives, the code supplies a minimal detail snapshot without error fields; this can classify an abnormal run as completed. Runtime behavior remains unverified.
+- Workbench bridge availability and presentation are unverified in a live target; the inspected Desktop preload exposed no notification method.
+- If no current-session `turn/end` reason or explicit error is available at the stop edge, the plugin uses a generic unknown-stop notice. Removed state is read only for the selected session; background Stop/Cancel/removal attribution may therefore be unknown and notify generically. A missing list row at the stop edge is suppressed as a possible archive/removal.
 - Durable session truth and connection recovery remain owned by DSH.
