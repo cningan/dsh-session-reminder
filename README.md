@@ -1,4 +1,4 @@
-# @local/dsh-session-status
+# @cningan/dsh-session-status
 
 English | [中文](README.zh.md)
 
@@ -22,7 +22,7 @@ The shell implementation is an external integration boundary and is not included
 
 ## Package entry points
 
-- The package name is @local/dsh-session-status, version 0.3.1. The package manifest marks it private.
+- The package name is @cningan/dsh-session-status, version 0.3.1. The package manifest marks it private.
 - lib/index.js is the empty Host half: it declares no Host injection and has an empty apply function.
 - lib/client.js is the loader-ready Client bundle and registers the session notification capability/settings row.
 
@@ -30,7 +30,7 @@ A DSH profile composes the package using its package name. Example insert row:
 
 ~~~yaml
 - id: session-status
-  name: '@local/dsh-session-status'
+  name: '@cningan/dsh-session-status'
 ~~~
 
 This repository is the maintained source location. A deployed profile is an external runtime/composition target; this repository setup did not modify any profile configuration.

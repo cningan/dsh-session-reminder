@@ -1,4 +1,4 @@
-# @local/dsh-session-status Specification
+# @cningan/dsh-session-status Specification
 
 This is the canonical current specification and code map for this package. It is based on the checked-in manifest, Client bundle, Host entry, and documentation. Source-level observations are not a substitute for runtime compatibility or end-to-end notification validation; unknown integration behavior is marked below.
 
@@ -12,7 +12,7 @@ The repository contains a loader-ready Client bundle plus an inert Host entry. P
 
 | Surface | Checked-in contract |
 |---|---|
-| Package | @local/dsh-session-status, version 0.3.1, private ES module package |
+| Package | @cningan/dsh-session-status, version 0.3.1, private ES module package |
 | Host entry | main and package root export resolve to lib/index.js |
 | Client entry | ./client export resolves to lib/client.js; dsh.client.platform is web |
 | Client dependencies | Manifest injects @deepseek-ai/dsh-client-runtime, @deepseek-ai/dsh-client-connection, and @deepseek-ai/dsh-client-ui-session; the bundle declares the runtime capabilities slots, sessions, connection, and uiSession |

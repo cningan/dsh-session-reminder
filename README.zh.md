@@ -1,4 +1,4 @@
-# @local/dsh-session-status
+# @cningan/dsh-session-status
 
 [English](README.md) | 中文
 
@@ -22,7 +22,7 @@ Shell 桥的实现属于外部集成边界，不包含在本仓库中。
 
 ## 包入口
 
-- 包名为 @local/dsh-session-status，版本 0.3.1；manifest 将其标记为 private。
+- 包名为 @cningan/dsh-session-status，版本 0.3.1；manifest 将其标记为 private。
 - lib/index.js 是空 Host 入口，不声明 Host 注入，apply 为空函数。
 - lib/client.js 是可由 DSH loader 加载的 Client bundle，并注册会话通知能力/设置行。
 
@@ -30,7 +30,7 @@ DSH Profile 通过包名组合此插件。配置行示例：
 
 ~~~yaml
 - id: session-status
-  name: '@local/dsh-session-status'
+  name: '@cningan/dsh-session-status'
 ~~~
 
 本仓库是维护源码位置。已部署的 Profile 是外部运行/组合目标；本次建仓没有修改任何 Profile 配置。
