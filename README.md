@@ -44,6 +44,17 @@ The Client half reports what it observed — load snapshot, session/status sourc
 
 This bundle consumes `uiSession.sessionStatus`, `connection.state`, the selected binding's `eventSource`, and official `SessionSnapshot` error fields; it does not depend on undocumented `nodes`. The Host `SessionEventWindow` schema has `events` and `target`, but the Client binding's exact window/lifetime contract remains unverified; missing or mismatched event data degrades to a generic notice. See [docs/compatibility.md](docs/compatibility.md).
 
+## Build
+
+`lib/client.js` is a **build artifact** (esbuild bundle, header marks it "do not edit") generated from `lib/client/`:
+
+- `npm run build:client` — production bundle: no diagnostics panel, no probes, no test-mode API ([ADR-0002](docs/adr/0002-debug-capability-only-in-debug-build.md))
+- `npm run build:client:debug` — debug bundle: keeps the diagnostics panel and `sendProbe`/`sendProbeBurst`/`setTestMode` for local triage
+- `npm test` — its `pretest` builds the debug bundle first; the suite then runs against it
+- `npm run check:production` — builds production and asserts the artifact carries no debug capability
+- `npm run diagnose` — reads `<profile>/.dsh-session-status/diagnostics.jsonl` and prints a verdict with an exit code
+- `prepack` builds production, so tarball installs never ship debug code
+
 ## Build and test status
 
 Run `npm test` for the built-in Node test suite covering session edges, terminal reasons, channel detection, foreground rules, connection-loss suppression, the plugin settings-section registration, and locale-dictionary language following. The checked-in Client file is already the DSH loader bundle; tests do not replace host/plugin integration or real notification testing.

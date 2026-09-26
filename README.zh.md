@@ -44,6 +44,17 @@ Client 半边把它观察到的事实（装载快照、会话/状态数据源形
 
 当前 bundle 使用 uiSession.sessionStatus、connection.state、当前 binding 的 eventSource 和官方 SessionSnapshot 错误字段，不依赖未声明的 nodes。Host 的 SessionEventWindow schema 使用 events/target；但 Client binding 的窗口形状与生命周期尚未独立核实。事件不可用或形状不符时退回通用提醒。详见 [docs/compatibility.md](docs/compatibility.md)。
 
+## 构建
+
+`lib/client.js` 是**构建产物**（esbuild 打包，文件头已标注"勿手改"），源码在 `lib/client/`：
+
+- `npm run build:client` —— 正式构建：不含诊断面板、探针与测试模式 API（见 [ADR-0002](docs/adr/0002-debug-capability-only-in-debug-build.md)）
+- `npm run build:client:debug` —— 调试构建：保留诊断面板与 `sendProbe`/`sendProbeBurst`/`setTestMode`，供本地排查
+- `npm test` —— `pretest` 先构建调试版，测试针对调试产物运行
+- `npm run check:production` —— 构建正式版并断言产物不含调试能力
+- `npm run diagnose` —— 读 `<profile>/.dsh-session-status/diagnostics.jsonl`，给出结论与退出码
+- `prepack` 走正式构建，因此从 tarball 安装永远不会带上调试代码
+
 ## 构建与测试状态
 
 运行 `npm test` 可执行内置 Node 测试，覆盖会话边沿、terminal reason、渠道识别、前台抑制、连接断开误报、插件设置区注册与 locale 字典语言跟随。当前 Client 文件本身就是 DSH loader bundle；这些测试不能代替 DSH 集成和真实通知验证。
