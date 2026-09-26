@@ -113,7 +113,7 @@ test("诊断 4 行按快照渲染：状态源摘要、最近边沿（含被抑�
   assert.equal(rowOf(panel, "edge").text, "最近边沿：等待边沿 · 交互=approval · 会话=s-1");
 });
 
-test("归属标注：摘要里出现子代理行时才追加，且能看出当前会话就是子代理（issue #16）", () => {
+test("归属标注：摘要里出现子代理行时才追加，且能看出当前会话就是子代理（.scratch/session-status/issues/16-subagent-sessions-excluded.md）", () => {
   const runs = [
     { id: "s-1", running: true, pending: false, unread: false, inList: true },
     { id: "child-1", running: true, pending: false, unread: false, inList: true, origin: "subagent" }
