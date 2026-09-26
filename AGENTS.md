@@ -18,7 +18,7 @@
 
 ### Issue tracker
 
-本仓库的 issue 与规格以 GitHub issues 承载，用 `gh` CLI 操作。见 `docs/agents/issue-tracker.md`。
+本仓库的 issue（票）是**工作区内的本地 Markdown 文件**，与规格放在一起：`.scratch/<feature-slug>/issues/<NN>-<slug>.md`（一张票一个文件，编号按依赖顺序，blockers 在前），状态写在文件靠上的 `Status:` 行，评论追加在文件底部 `## Comments` 下；规格沿用仓库根 [`SPEC.md`](SPEC.md)。不用 GitHub issues，也不用 `gh` CLI。见 [docs/agents/issue-tracker.md](docs/agents/issue-tracker.md)。
 
 ### Triage labels
 

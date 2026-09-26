@@ -117,7 +117,7 @@ test("host diagnostics route rejects a wrong method and a missing event", async 
   });
 });
 
-// —— 以下是诊断契约的闸门（issue #2）：坏记录不再静默落盘，而且拒绝这件事是可观察的。
+// —— 以下是诊断契约的闸门（.scratch/session-status/issues/07-diagnostics-contract-owner.md）：坏记录不再静默落盘，而且拒绝这件事是可观察的。
 
 const STATUS_PAYLOAD = {
   statusEntries: 1,

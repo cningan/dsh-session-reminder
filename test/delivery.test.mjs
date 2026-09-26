@@ -330,7 +330,7 @@ test("reads sticky user activation from the platform, and says null when there i
   }
 });
 
-// —— 渠道 adapter 序列（issue #1）与能力/权限的单一来源（issue #3）——
+// —— 渠道 adapter 序列（.scratch/session-status/issues/05-delivery-channel-adapters.md）与能力/权限的单一来源（.scratch/session-status/issues/13-foreground-single-source.md）——
 
 /**
  * adapter 级替身：只注入渠道做副作用所需的那些口（不模拟浏览器）。每个 adapter 都
@@ -475,7 +475,7 @@ test("顺序与回退由序列驱动：shell 抛错 → webview；两个都抛 �
   assert.deepEqual(broken.failures.map((entry) => entry.label), ["system notification failed"]);
 });
 
-test("一次投递只派生一次能力值：可用性判定、结果与上报体用的是同一个 (issue #3)", () => {
+test("一次投递只派生一次能力值：可用性判定、结果与上报体用的是同一个 (.scratch/session-status/issues/13-foreground-single-source.md)", () => {
   let permissionReads = 0;
   class FlippingNotification {
     static get permission() {

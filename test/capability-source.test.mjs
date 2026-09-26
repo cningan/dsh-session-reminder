@@ -1,5 +1,5 @@
 /**
- * 能力/权限派生的**单一来源防线**（issue #3）：宿主能力（桥的形状宣称、浏览器权限、
+ * 能力/权限派生的**单一来源防线**（.scratch/session-status/issues/13-foreground-single-source.md）：宿主能力（桥的形状宣称、浏览器权限、
  * 用户激活）只允许由投递层的 `readCapabilities` 读取；其余 module 只能消费它派生出来的
  * **值**（`capability()` / `result.capability` / `delivery.permission()`）。
  *
