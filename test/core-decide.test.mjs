@@ -449,3 +449,134 @@ test("形状不完整的快照被忽略，不会崩也不会产出提醒", () =>
   assert.deepEqual(decider.observe({ sessions: [null, 42, {}, { id: "" }] }), []);
   assert.deepEqual(decider.observe({ sessions: [{ id: "a" }] }), []);
 });
+
+// 以下是**追加**的只读边沿事实通道（`decider.edges`）：`observe` 的 notices 契约不变，
+// 边沿事实走独立的只读出口，让诊断 sink 能记录「边沿被观察到、只是没有提醒」那类事实。
+
+test("只读边沿事实不改变 notices：被抑制的停止边沿仍然没有提醒，但边沿被观察到", () => {
+  const decider = createDecider();
+  assert.deepEqual(decider.edges, []);
+
+  decider.observe(snapshot([session("a", { running: true })]));
+  const notices = decider.observe(snapshot([session("a", { running: false, inList: false, unread: true })]));
+
+  // 既有契约：抑制的边沿不产出提醒，observe 返回的仍是没有附加属性的数组。
+  assert.deepEqual(notices, []);
+  assert.equal(Object.keys(notices).length, notices.length);
+
+  // 只读事实：边沿确实被观察到了，且明说「没有提醒」。
+  assert.deepEqual(decider.edges, [{
+    sessionId: "a",
+    kind: "terminal",
+    noticeIndex: null,
+    interactionKind: null,
+    suppressed: "missing-list-row",
+    isCurrent: false,
+    hasTurnEndReason: false
+  }]);
+});
+
+test("只读边沿事实的顺序：已产出提醒的在前（与 notices 同序），仅观察到的在后", () => {
+  const decider = createDecider();
+  decider.observe(snapshot([session("a", { running: true }), session("b", { running: true })]));
+
+  // a 的列表行不在（抑制）、b 正常停止（提醒）：既有诊断记录也是「先提醒、后抑制」。
+  const notices = decider.observe(snapshot([
+    session("a", { running: false, inList: false }),
+    session("b", { running: false })
+  ]));
+
+  assert.deepEqual(notices, [
+    { sessionId: "b", title: "b title", kind: "terminal", reason: "interrupted", detail: "" }
+  ]);
+  assert.deepEqual(decider.edges, [
+    {
+      sessionId: "b",
+      kind: "terminal",
+      noticeIndex: 0,
+      interactionKind: null,
+      suppressed: null,
+      isCurrent: false,
+      hasTurnEndReason: false
+    },
+    {
+      sessionId: "a",
+      kind: "terminal",
+      noticeIndex: null,
+      interactionKind: null,
+      suppressed: "missing-list-row",
+      isCurrent: false,
+      hasTurnEndReason: false
+    }
+  ]);
+});
+
+test("只读边沿事实区分「静默」（用户取消/已移除）与「被抑制」，并带上选中会话与 turn/end 事实", () => {
+  const decider = createDecider();
+  const cancelled = { removed: false, turnEnd: { kind: "aborted", reason: { kind: "user" } }, detail: undefined };
+  decider.observe(snapshot([session("a", { running: true }), session("c", { running: true })], { currentId: "a" }));
+
+  const notices = decider.observe(snapshot(
+    [session("a", { running: false }), session("c", { running: false })],
+    { currentId: "a", current: cancelled }
+  ));
+
+  assert.deepEqual(notices, [
+    { sessionId: "c", title: "c title", kind: "terminal", reason: "interrupted", detail: "" }
+  ]);
+  assert.deepEqual(decider.edges, [
+    {
+      sessionId: "c",
+      kind: "terminal",
+      noticeIndex: 0,
+      interactionKind: null,
+      suppressed: null,
+      isCurrent: false,
+      hasTurnEndReason: true
+    },
+    // 选中会话被用户取消：静默（不是「列表行不在」），所以 suppressed 为 null。
+    {
+      sessionId: "a",
+      kind: "terminal",
+      noticeIndex: null,
+      interactionKind: null,
+      suppressed: null,
+      isCurrent: true,
+      hasTurnEndReason: true
+    }
+  ]);
+});
+
+test("只读边沿事实给等待边沿带上游交互子类与 notices 下标", () => {
+  const decider = createDecider();
+  decider.observe(snapshot([session("a", { running: true })]));
+
+  const notices = decider.observe(snapshot([session("a", { running: true, pending: { kind: "plan-review" } })]));
+  assert.equal(notices.length, 1);
+  assert.deepEqual(decider.edges, [{
+    sessionId: "a",
+    kind: "pending",
+    noticeIndex: 0,
+    interactionKind: "plan-review",
+    suppressed: null,
+    isCurrent: false,
+    hasTurnEndReason: false
+  }]);
+});
+
+test("只读边沿事实是冻结的，且每轮 observe 都重新给出本轮的事实", () => {
+  const decider = createDecider();
+  decider.observe(snapshot([session("a", { running: true })]));
+  const stopped = decider.observe(snapshot([session("a", { running: false })]));
+
+  assert.ok(Object.isFrozen(decider.edges));
+  assert.ok(decider.edges.every((edge) => Object.isFrozen(edge)));
+  assert.equal(decider.edges.length, 1);
+  assert.equal(stopped.length, 1);
+
+  // 没有新边沿的一轮：事实清空（不是沿用上一轮的）。
+  const idle = decider.observe(snapshot([session("a", { running: false })]));
+  assert.deepEqual(idle, []);
+  assert.deepEqual(decider.edges, []);
+});
+
