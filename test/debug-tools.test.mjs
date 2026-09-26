@@ -7,7 +7,9 @@
  *      连发与延迟都只是它的组合（定时器可注入，所以不必等真实时间）；
  *   2. 测试模式开关写在连接口上（model 读它跳过前台抑制）并触发一次重渲染；
  *   3. 设置区的调试部分（诊断文本块 + 诊断工具行）由本 module 渲染：`canTest` 为假时
- *      只有诊断块、没有工具行，正式构建里设置区拿不到它（见 test/settings.test.mjs）。
+ *      只有诊断块、没有工具行，正式构建里设置区拿不到它（见 test/settings.test.mjs）；
+ *   4. 诊断行的页面事实**来自注入的快照值**——本 module 不读宿主页面，所以即使全局
+ *      `document` 声称隐藏，注入值说前台时诊断行也跟前台（UI 与投递判定同源）。
  */
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -147,7 +149,7 @@ test("诊断文本块：状态源/边沿/投递/当前页面四行，缺数据�
   assert.match(lines[0], /^诊断·状态源 \? 条/);
   assert.equal(lines[1], "诊断·边沿 尚未观察到");
   assert.equal(lines[2], "诊断·投递 尚无尝试");
-  // Node 直测里没有 document：页面那两行给 `?`，不抛。
+  // 快照里没有页面事实（缺 `page` 键）：页面那行给 `?`，不抛。
   assert.equal(lines[3], "诊断·当前页面 ?；失焦判定 否");
 
   const filled = tools.renderExtras({
@@ -177,6 +179,36 @@ test("诊断文本块：状态源/边沿/投递/当前页面四行，缺数据�
   // 诊断块本身是独立整行（不是被按钮挤压的窄列）。
   assert.equal(empty[0].type, "div");
   assert.equal(empty[0].props.className, "dshss-settings-diagnostics");
+});
+
+test("诊断行的页面事实来自注入值：debug-tools 不自己读宿主页面", () => {
+  const { tools } = createTools();
+  const render = (page) => lineTexts(tools.renderExtras({
+    snapshot: { diagnostics: {}, page },
+    canTest: false,
+    testResult: "",
+    setTestResult() {}
+  })[0])[3];
+
+  // 注入什么就显示什么：判定（`background`）与证据（`visibility`）都由归一化给出。
+  assert.equal(render({ visibility: "hidden", focused: true, background: true }), "诊断·当前页面 hidden；失焦判定 是");
+  assert.equal(render({ visibility: "visible", focused: false, background: true }), "诊断·当前页面 visible；失焦判定 是");
+  assert.equal(render({ visibility: "visible", focused: true, background: false }), "诊断·当前页面 visible；失焦判定 否");
+  // 没有宿主页面：可见性未知（`?`），也不构成「前台之外」。
+  assert.equal(render({ visibility: null, focused: null, background: false }), "诊断·当前页面 ?；失焦判定 否");
+  // 形状不符（只有 background）：可见性退化成占位，判定仍照注入值走。
+  assert.equal(render({ background: true }), "诊断·当前页面 ?；失焦判定 是");
+
+  // 决定性的一条：宿主页面声称「隐藏」，注入值说「前台」——诊断行必须跟注入值走，
+  // 否则 UI 与真正决定投递的表达式又会分叉。
+  const previousDocument = globalThis.document;
+  globalThis.document = { visibilityState: "hidden", hasFocus: () => false };
+  try {
+    assert.equal(render({ visibility: "visible", focused: true, background: false }), "诊断·当前页面 visible；失焦判定 否");
+  } finally {
+    if (previousDocument === undefined) delete globalThis.document;
+    else globalThis.document = previousDocument;
+  }
 });
 
 test("只有已经能投递（canTest）时才给诊断工具行，四个按钮固定顺序且探针可达", () => {
