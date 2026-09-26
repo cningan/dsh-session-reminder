@@ -23,7 +23,7 @@ The shell implementation is an external integration boundary and is not included
 ## Package entry points
 
 - The package name is @cningan/dsh-session-status, version 0.3.1. The package manifest marks it private.
-- lib/index.js is the empty Host half: it declares no Host injection and has an empty apply function.
+- lib/index.js is the Host half: it injects `webServer`, owns the diagnostics sink (`/plugins/dsh-session-status/diagnostics`), and appends JSONL records under the profile's `.dsh-session-status/` directory. It never decides when a reminder is due.
 - lib/client.js is the loader-ready Client bundle and registers the session notification capability plus a plugin settings section.
 
 The package declares `dsh.bundle.patch` (`cordis.patch.yml`), so the official channel can treat it as a bundle: install it with `plugin_manager` `install_bundle` (or Add plugin in the client) and that patch mounts the package's own entry (`id: session-status`, `name: '@cningan/dsh-session-status'`). Install from a local `.tgz`, whose contents are unpacked into the profile; do not use a directory or `link:` input, which only creates a junction and cannot resolve `@deepseek-ai/*`.
@@ -35,6 +35,10 @@ This repository is the maintained source location. A deployed profile is an exte
 Open the plugin settings page and find its Session reminders section (registered on `settings.section`). Reminder text and the section follow the DSH interface language through the official locale service. The section reports a recognized workbench bridge or browser-notification permission state; when the bridge is absent, the browser path can still be enabled if supported. Use Send test reminder to exercise the available delivery path.
 
 The `desktop` profile has the plugin installed through the official channel from a local tarball. The automatic session-stop path still requires an end-to-end check in a separate DSH session; do not treat the settings self-check or unit tests as that validation.
+
+## Diagnostics
+
+The Client half reports what it observed — load snapshot, session/status source shape, run edges, the foreground test, and the delivery result — to the Host half, which appends them to `<profile>/.dsh-session-status/diagnostics.jsonl`; the Host also writes a `host-ready` marker on load, which separates "Host never ran" from "Client never reported". Run `npm run diagnose` (or `node scripts/check-diagnostics.mjs <file>`) to read that file and get a verdict with an exit code: `0` delivered, `1` broken chain (with the reason), `2` no data, `3` no stop edge observed yet. This is how a run is audited after the fact instead of watching the window.
 
 ## Compatibility
 

@@ -5,7 +5,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "diagnose": "node scripts/check-diagnostics.mjs"
   },
   "main": "lib/index.js",
   "exports": {

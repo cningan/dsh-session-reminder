@@ -29,6 +29,7 @@ function createHarness({ statuses = new Map(), currentId, detailBySession = {}, 
   const handlers = new Map();
   const cleanup = [];
   const opened = [];
+  const reports = [];
   const effectiveBrowserPermission = browserPermission ?? (native === "browser" ? "granted" : "default");
 
   class MockNotification {
@@ -140,6 +141,12 @@ function createHarness({ statuses = new Map(), currentId, detailBySession = {}, 
     navigator: { language: "en" },
     Notification: MockNotification,
     Map,
+    fetch: (path, options) => {
+      try {
+        reports.push({ path, body: JSON.parse(options?.body ?? "{}") });
+      } catch {}
+      return Promise.resolve({ ok: true });
+    },
     console: { log() {}, info() {}, warn() {}, error() {} }
   }, { filename: "lib/client.js" });
   window.plugin.apply(ctx);
@@ -154,6 +161,7 @@ function createHarness({ statuses = new Map(), currentId, detailBySession = {}, 
     opened,
     registration,
     settingsElement,
+    reports,
     model: settingsProps.model,
     setRows: (byId) => list.set({ byId }),
     setStatuses: (next) => sessionStatus.set(next),
@@ -406,4 +414,60 @@ test("follows the official locale dictionary instead of guessing from the docume
   assert.match(harness.notices[0].options.body, /Background session/);
   assert.match(harness.notices[0].options.body, /无法确定原因/);
   assert.equal(harness.registration.meta.label(), "会话提醒");
+});
+
+test("reports its load snapshot and status source shape to the diagnostics sink", () => {
+  const harness = createHarness({
+    currentId: "current",
+    statuses: new Map([["current", { running: true, completionUnread: false }]])
+  });
+
+  const events = harness.reports.map((entry) => entry.body.event);
+  assert.ok(events.includes("attach"));
+  assert.ok(events.includes("status"));
+
+  const attach = harness.reports.find((entry) => entry.body.event === "attach");
+  assert.equal(attach.path, "/plugins/dsh-session-status/diagnostics");
+  assert.equal(attach.body.payload.hasSessionsList, true);
+  assert.equal(attach.body.payload.hasSessionStatus, true);
+
+  const status = harness.reports.find((entry) => entry.body.event === "status");
+  assert.equal(status.body.payload.currentInStatuses, true);
+  assert.equal(status.body.payload.listHandlesCurrent, true);
+});
+
+test("reports the foreground verdict together with a delivered stop reminder", () => {
+  const harness = createHarness({
+    currentId: "current",
+    statuses: new Map([["current", { running: true, completionUnread: false }]])
+  });
+
+  harness.setStatuses(new Map([["current", { running: false, completionUnread: false }]]));
+
+  const edges = harness.reports.filter((entry) => entry.body.event === "edge");
+  assert.equal(edges.at(-1).body.payload.kind, "terminal");
+  assert.equal(edges.at(-1).body.payload.suppressed, null);
+
+  const deliveries = harness.reports.filter((entry) => entry.body.event === "deliver");
+  assert.equal(deliveries.length, 1);
+  assert.equal(deliveries[0].body.payload.channel, "browser");
+  assert.equal(deliveries[0].body.payload.delivered, true);
+  assert.equal(deliveries[0].body.payload.background, true);
+});
+
+test("reports a foreground suppression instead of silently dropping the stop edge", () => {
+  const harness = createHarness({
+    currentId: "current",
+    focused: true,
+    statuses: new Map([["background", { running: true, completionUnread: false }]])
+  });
+
+  harness.setStatuses(new Map([["background", { running: false, completionUnread: true }]]));
+
+  assert.equal(harness.notices.length, 0);
+  const deliveries = harness.reports.filter((entry) => entry.body.event === "deliver");
+  assert.equal(deliveries.length, 1);
+  assert.equal(deliveries[0].body.payload.channel, "suppressed-foreground");
+  assert.equal(deliveries[0].body.payload.delivered, false);
+  assert.equal(deliveries[0].body.payload.background, false);
 });

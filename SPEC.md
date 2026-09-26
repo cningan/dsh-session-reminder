@@ -24,6 +24,7 @@ DSH Web 用户会同时跑多个会话：当窗口失焦或隐藏时，一个会
 10. 作为用户/维护者，我想用设置页自检发固定测试载荷验证投递通道，以便不改会话状态就能确认通道可用。
 11. 作为中文用户，我想让提醒文案与设置区始终跟随 DSH 界面语言，以便不出现中英混排或语言漂移。
 12. 作为维护者，我想让设置入口位于插件配置页（而不是常规设置页），以便插件配置与常规设置分区明确。
+13. 作为维护者，我想让插件把每次边沿、前台判定与投递结果落盘，以便事后审计而不必盯着窗口等会话结束。
 
 ## 实现决策
 
@@ -36,10 +37,11 @@ DSH Web 用户会同时跑多个会话：当窗口失焦或隐藏时，一个会
 - **设置项**：在**插件配置页**的 `settings.section` 注册 section（id `@cningan/dsh-session-status`、order 30、label 走 locale），内容区报告投递能力或浏览器权限状态，可请求权限，提供 Send test reminder。不是常规设置页的 `settings.general.item` 行。
 - **语言**：文案字典经官方 `locale` 服务注册（`ctx.locale.register` / `ctx.locale.bind`），语言跟随 DSH 界面设置；不读 `document.documentElement.lang` 或 `navigator.language` 猜测语言，也不在插件启动时把语言定死。
 - **可安装性**：包声明 `dsh.bundle.patch`（`./cordis.patch.yml`）并自带该 patch，官方安装渠道才能把它识别为 bundle；安装输入用本地 `.tgz`（内容解包进 profile），不用目录/`link:` 形式（只建 junction 会让 `@deepseek-ai/*` 解析失败）。
+- **诊断与可审计性**：Host 半边注入 `webServer` 并注册 `/plugins/dsh-session-status/diagnostics`，把 Client 上报的装载快照、数据源形状（列表是否有 `byId`、`sessionStatus` 是否覆盖当前会话）、运行/等待边沿、前台判定与投递结果追加写入 profile 下 `.dsh-session-status/diagnostics.jsonl`；Host 加载时先写一条 `host-ready`，用来区分"Host 未运行"与"Client 未上报"。上报失败不影响提醒行为。`npm run diagnose`（`scripts/check-diagnostics.mjs`）读取该文件给出结论与退出码（0 已投递 / 1 链路断开 / 2 无数据 / 3 尚未观察到停止边沿）。
 
 ## 测试决策
 
-- **测试约定**：用 Node 内置 test runner（`npm test`），覆盖生命周期边沿、事件原因分类、渠道识别、去重、前台抑制、连接断开处理、设置区注册位置（`settings.section`）与语言跟随官方 locale 字典；这些是契约级测试，不替代真实 DSH 集成、原生 shell 行为或操作系统通知验证。
+- **测试约定**：用 Node 内置 test runner（`npm test`），覆盖生命周期边沿、事件原因分类、渠道识别、去重、前台抑制、连接断开处理、设置区注册位置（`settings.section`）、语言跟随官方 locale 字典，以及诊断契约（Host 路由的写入与拒绝分支、Client 上报内容与前台抑制上报）；这些是契约级测试，不替代真实 DSH 集成、原生 shell 行为或操作系统通知验证。
 - **运行态验证**：有效的自动通知端到端测试必须用全新、普通的 DSH 用户会话，并在 DSH 页面/窗口隐藏或失焦时结束；构建会话、子 Agent、单元测试与前台设置自检都不满足该测试。在真实会话停止的用户可见自动通知得到确认之前，不声称 E2E 成功、不推送 GitHub。
 
 ## 范围外

@@ -23,7 +23,7 @@ Shell 桥的实现属于外部集成边界，不包含在本仓库中。
 ## 包入口
 
 - 包名为 @cningan/dsh-session-status，版本 0.3.1；manifest 将其标记为 private。
-- lib/index.js 是空 Host 入口，不声明 Host 注入，apply 为空函数。
+- lib/index.js 是 Host 半边：注入 `webServer`，持有诊断落盘端点（`/plugins/dsh-session-status/diagnostics`），把 JSONL 记录追加到 profile 下的 `.dsh-session-status/` 目录；它不参与"何时该提醒"的判定。
 - lib/client.js 是可由 DSH loader 加载的 Client bundle，并注册会话通知能力与插件设置区（section）。
 
 包声明 `dsh.bundle.patch`（`cordis.patch.yml`），官方渠道才会把它识别为 bundle：用 `plugin_manager` 的 `install_bundle`（或客户端「添加插件」）安装，自带 patch 会挂载本包自己的条目（`id: session-status`、`name: '@cningan/dsh-session-status'`）。安装输入用本地 `.tgz`，内容解包进 profile；不要用目录或 `link:` 形式——那只建 junction，`@deepseek-ai/*` 无法解析。
@@ -35,6 +35,10 @@ Shell 桥的实现属于外部集成边界，不包含在本仓库中。
 打开插件设置页，找到其中的「会话提醒」区（注册于 `settings.section`）。提醒文案与设置区经官方 locale 服务跟随 DSH 界面语言。该区会显示已识别的 workbench 桥接或浏览器通知权限状态；如果桥接缺失，仍可在支持时启用浏览器通知。使用 Send test reminder 测试当前可用的提醒路径。
 
 `desktop` Profile 现已经官方渠道、以本地压缩包安装该插件。自动会话停止通知仍需在独立 DSH 会话中做端到端验证；设置自检和单元测试不能替代该验证。
+
+## 诊断
+
+Client 半边把它观察到的事实（装载快照、会话/状态数据源形状、运行边沿、前台判定与投递结果）上报给 Host 半边，后者追加写入 `<profile>/.dsh-session-status/diagnostics.jsonl`；Host 加载时还会先写一条 `host-ready`，用来区分"Host 没跑起来"与"Client 没上报"。运行 `npm run diagnose`（或 `node scripts/check-diagnostics.mjs <文件>`）读取该文件并给出结论与退出码：`0` 已投递、`1` 链路断开（附原因）、`2` 无数据、`3` 尚未观察到停止边沿。这样一次运行可以事后审计，而不必盯着窗口等它结束。
 
 ## 兼容性
 
