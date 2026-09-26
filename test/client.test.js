@@ -9,7 +9,8 @@
  * 它们不 `import vm`、不模拟浏览器。本文件不再逐条重建假浏览器。
  *
  * 留在这里的断言都是**装配层独有**、别处观察不到的事实：
- *   - 官方源的读取与归一化（列表行 / 状态 / 当前会话绑定 → 领域快照；官方快照的字段名）
+ *   - 官方源的读取与归一化（列表行 / 状态 / 当前会话绑定 → 领域快照；官方快照的字段名），
+ *     含**归属过滤**（子代理会话不进判定、不产出边沿记录，诊断里另有归属标注）
  *   - `turn/end` 事件窗口缓存，以及「新一轮丢弃上一轮原因」的定界
  *   - 语义 → 通知标题/正文的文案组装（含跟随官方 locale 词典的语言）
  *   - 前台否决的**记账与上报**（按设计静默也要写一条可区分的投递记录）
@@ -58,6 +59,7 @@ function createHarness({
   statuses = new Map(),
   currentId,
   bindings = {},
+  rows = { background: { title: "Background session" }, current: { title: "Current session" } },
   focused = false,
   localeLanguage = "en",
   bridges = "none",
@@ -132,10 +134,7 @@ function createHarness({
     querySelector: () => null
   };
 
-  const list = observable({ byId: {
-    background: { title: "Background session" },
-    current: { title: "Current session" }
-  } });
+  const list = observable({ byId: rows });
   const sessionStatus = observable(statuses);
   const current = observable({ key: currentId });
   const connectionState = observable("connected");
@@ -206,6 +205,56 @@ function createHarness({
     payloads: (event) => reports.filter((entry) => entry.body.event === event).map((entry) => entry.body.payload)
   };
 }
+
+test("归属过滤端到端：子代理会话不投递、不产出边沿记录，父/普通会话照旧", () => {
+  // 列表行上的 `origin` 是唯一判据（官方闭集标记，只有 `"subagent"` 一个非空取值）：
+  //   - `child` 是子代理会话；
+  //   - `fork` 共享血缘字段（`parentId`）却**没有** `origin`——fork 是独立的普通会话，
+  //     必须照旧参与提醒（按血缘过滤会误伤它）。
+  // 三个会话从**第一次同步**起就在快照里，所以 `child` 从来没有进入过判定（连基线都没有）。
+  const harness = createHarness({
+    currentId: "current",
+    rows: {
+      current: { title: "Current session" },
+      child: { title: "Child agent", origin: "subagent", parentId: "current" },
+      fork: { title: "Fork", parentId: "current" }
+    },
+    statuses: new Map([running("current"), running("child"), running("fork")])
+  });
+
+  // 三个会话同时停止：只该有两条提醒，且都不属于子代理会话。
+  harness.setStatuses(new Map([stopped("current"), stopped("child"), stopped("fork")]));
+
+  assert.deepEqual(harness.notices.map((notice) => notice.options.body), [
+    "Current session: The session stopped, but the reason is unavailable",
+    "Fork: The session stopped, but the reason is unavailable"
+  ]);
+  // 子代理会话**没有任何边沿记录**：它从未进入判定。这是「按归属跳过」的签名，
+  // 与「还没观察到边沿」由下面的状态源摘要区分。
+  assert.deepEqual(harness.payloads("edge").map((edge) => edge.sessionId), ["current", "fork"]);
+  assert.equal(harness.payloads("deliver").length, 2);
+
+  // 等待边沿同样不例外：子代理会话出现等待请求也不产出提醒。
+  harness.setStatuses(new Map([
+    running("current"),
+    ["child", { running: true, pendingInteraction: { kind: "approval" }, completionUnread: false }],
+    running("fork")
+  ]));
+  assert.equal(harness.notices.length, 2);
+  assert.equal(harness.payloads("edge").length, 2);
+
+  // 诊断态度：状态源摘要照旧报**官方状态源本身**（子代理行照样出现），但给子代理行额外
+  // 打上 `origin: "subagent"`，读方据此把「它没有边沿记录」解释成「按归属过滤、不参与提醒」。
+  // 标注只加在子代理行上：父/普通行的记录与既有 JSONL 逐字段（含字段集合）一致。
+  const runs = harness.payloads("status").at(-1).runs;
+  assert.deepEqual(runs.find((run) => run.id === "child"), {
+    id: "child", running: true, pending: true, unread: false, inList: true, origin: "subagent"
+  });
+  assert.deepEqual(runs.find((run) => run.id === "current"), {
+    id: "current", running: true, pending: false, unread: false, inList: true
+  });
+  assert.equal("origin" in runs.find((run) => run.id === "fork"), false, "fork 是普通会话，不得被打上归属标注");
+});
 
 test("后台停止边沿端到端：判定 → 文案 → 投递 → 逐条上报（含被抑制的边沿）", () => {
   const harness = createHarness({

@@ -113,6 +113,40 @@ test("诊断 4 行按快照渲染：状态源摘要、最近边沿（含被抑�
   assert.equal(rowOf(panel, "edge").text, "最近边沿：等待边沿 · 交互=approval · 会话=s-1");
 });
 
+test("归属标注：摘要里出现子代理行时才追加，且能看出当前会话就是子代理（issue #16）", () => {
+  const runs = [
+    { id: "s-1", running: true, pending: false, unread: false, inList: true },
+    { id: "child-1", running: true, pending: false, unread: false, inList: true, origin: "subagent" }
+  ];
+  const service = createFakeService();
+  service.setDiagnostics({
+    status: { statusEntries: 3, currentId: "child-1", currentInStatuses: true, listHandlesCurrent: true, runs }
+  });
+  const panel = renderPanel(service);
+
+  // 主插件只给子代理行打 `origin` 标注；面板把它照出来，并说明当前会话正在被归属过滤。
+  assert.equal(
+    rowOf(panel, "status").text,
+    "状态源摘要：3 个会话 · 当前=child-1 · 状态/列表=是/是 · 运行中=2 · 子代理=1（不参与提醒） · "
+      + "当前会话=子代理（不参与提醒）"
+  );
+
+  // 当前会话不是子代理（只是摘要窗口里有子代理行）：只说条数，不给「当前会话」那一句。
+  service.setDiagnostics({
+    status: { statusEntries: 3, currentId: "s-1", currentInStatuses: true, listHandlesCurrent: true, runs }
+  });
+  assert.equal(
+    rowOf(panel, "status").text,
+    "状态源摘要：3 个会话 · 当前=s-1 · 状态/列表=是/是 · 运行中=2 · 子代理=1（不参与提醒）"
+  );
+
+  // 摘要里没有子代理行：这一行与以前逐字符相同（既有断言即这一条），界面不凭空多话。
+  service.setDiagnostics({
+    status: { statusEntries: 3, currentId: "s-1", currentInStatuses: true, listHandlesCurrent: false, runs: runs.slice(0, 1) }
+  });
+  assert.equal(rowOf(panel, "status").text, "状态源摘要：3 个会话 · 当前=s-1 · 状态/列表=是/否 · 运行中=1");
+});
+
 test("三态开关：把对应 mode 交给 setForegroundOverride，默认跟随真实", () => {
   const service = createFakeService();
   const panel = renderPanel(service);
@@ -310,6 +344,7 @@ test("样式表按标记安装/替换/卸载；文案跟随 DSH 界面语言（�
     "modeStatus", "evidence", "yes", "no", "unknown", "none", "verdictBackground", "verdictForeground",
     "probesLabel", "probeTest", "probeInterrupted", "probeBurst", "probeNameTest", "probeNameInterrupted",
     "diagnosticsLabel", "labelSeparator", "diagStatus", "diagEdge", "diagDeliver", "diagPage", "empty", "statusValue",
+    "subagentRuns", "currentSubagent",
     "edgePendingValue", "edgeSuppressedValue", "edgeTerminalValue", "deliverValue", "platformValue",
     "pageValue", "overrideValue", "verdictDelivered", "verdictSuppressed", "verdictNotDelivered",
     "pageBackground", "pageForeground", "resultDelivered", "resultSuppressed", "resultBurstAll", "resultBurstPartial"

@@ -7,6 +7,7 @@
  *   1. 标题三段回退（displayTitle → title → sessionId）；
  *   2. 详情抽取（lastAgentError / promptError / openError 的 code 与 message 组合）；
  *   3. 列表行与状态映射的归一化（inList、pending 的**对象同一性**与 kind、removed）；
+ *   3b. 归属过滤（`origin === "subagent"` 的会话不入领域快照；fork 与认不出的标记不受影响）；
  *   4. 前台判定的四种情形（隐藏 / 失焦 / 可见且聚焦 / 没有宿主页面）——它是整条插件最
  *      承重的前置条件「仅在前台之外投递」；
  *   5. 单一来源防线：`lib/` 下只有归一化 module 读页面可见性/焦点（其余 module 只能
@@ -20,6 +21,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   detailShapeOf,
+  isSubagentSession,
   normalizeCurrent,
   normalizeSessions,
   readPageState,
@@ -136,6 +138,49 @@ test("会话归一化：pending 原样带走同一个交互对象与它的 kind�
   assert.equal(sessions[1].pending.kind, "question");
   // 没有等待时是 null（不是 undefined），与领域契约一致。
   assert.equal(sessions[2].pending, null);
+});
+
+// ── ③b 归属过滤：只有父/普通会话进入领域快照（.scratch/session-status/issues/16-subagent-sessions-excluded.md）─────────────────────
+
+test("归属过滤：origin === 'subagent' 的会话不入领域快照，父/普通会话逐字段不变", () => {
+  const approval = { kind: "approval" };
+  const rows = {
+    parent: { title: "Parent" },
+    child: { title: "Child agent", origin: "subagent", parentId: "parent" },
+    // fork 出来的会话共享血缘字段却**没有** origin：它是独立的普通会话，必须照旧参与。
+    fork: { title: "Fork", parentId: "parent" }
+  };
+  const statuses = new Map([
+    ["parent", { running: true, completionUnread: false }],
+    ["child", { running: true, pendingInteraction: approval, completionUnread: false }],
+    ["fork", { running: false, completionUnread: true }]
+  ]);
+
+  // 子代理行整个消失（连标题都不该出现），其余两条与没有过滤时逐字段一致。
+  assert.deepEqual(normalizeSessions(rows, statuses), [
+    { id: "parent", title: "Parent", running: true, pending: null, unread: false, inList: true },
+    { id: "fork", title: "Fork", running: false, pending: null, unread: true, inList: true }
+  ]);
+});
+
+test("归属过滤的判据只有严格等于 'subagent' 这一个取值：认不出来就落回既有行为", () => {
+  assert.equal(isSubagentSession({ origin: "subagent" }), true);
+  // 缺席（父/普通会话）、null、别的字符串、非对象一律**不**过滤——不能把认不出的会话悄悄丢掉。
+  for (const row of [undefined, null, {}, { title: "no origin" }, { origin: null }, { origin: "main" },
+    { origin: "" }, { origin: 1 }, { origin: ["subagent"] }, "subagent"]) {
+    assert.equal(isSubagentSession(row), false, `${JSON.stringify(row)} 不应被认成子代理会话`);
+  }
+
+  // 没有列表行（形状不符）时也照样进入判定：过滤只认列表行上的标记，不做形态推断
+  // （会话 id 的 `session-<uuid>` / 裸 uuid 形态不是契约）。
+  assert.deepEqual(normalizeSessions({}, new Map([["a", { running: true }]])), [
+    { id: "a", title: "a", running: true, pending: null, unread: false, inList: false }
+  ]);
+
+  // 行在、标记认不出：与既有行为一致。
+  assert.deepEqual(normalizeSessions({ a: { origin: "main" } }, new Map([["a", { running: true }]])), [
+    { id: "a", title: "a", running: true, pending: null, unread: false, inList: true }
+  ]);
 });
 
 test("选中会话归一化：removed 标记、turn/end 原始原因与详情形状", () => {

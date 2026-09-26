@@ -171,17 +171,31 @@ function text(value, fallback) {
   return typeof value === "string" && value !== "" ? value : fallback;
 }
 
-/** 状态源摘要行：会话数、当前会话、当前会话是否在状态/列表快照里、运行中的会话数。 */
+/**
+ * 状态源摘要行：会话数、当前会话、当前会话是否在状态/列表快照里、运行中的会话数，
+ * 以及**归属**（.scratch/session-status/issues/16-subagent-sessions-excluded.md：子代理会话不参与提醒）。
+ *
+ * 归属那两段只在摘要里**确实出现子代理行**时才追加，因此没有子代理时这一行与以前逐字符
+ * 相同（既有断言不会被无关改动带偏）。`origin` 标注由主插件的状态源摘要给出——它只加在
+ * 子代理行上（见 `lib/client/assembly.mjs` 的 `summary`），所以这里不做二次推断。
+ * `当前会话=子代理` 只在选中会话恰好落在这 24 行的摘要窗口内时给得出；窗口外的归属未知，
+ * 面板不猜。
+ */
 export function describeStatus(status, t) {
   if (status === null || status === undefined) return t("empty");
   const runs = Array.isArray(status.runs) ? status.runs : [];
-  return t("statusValue", {
+  const base = t("statusValue", {
     entries: status.statusEntries ?? 0,
     current: text(status.currentId, t("none")),
     inStatus: yesNo(t, status.currentInStatuses),
     inList: yesNo(t, status.listHandlesCurrent),
     running: runs.filter((run) => run?.running === true).length
   });
+  const subagents = runs.filter((run) => run?.origin === "subagent");
+  const markers = [];
+  if (subagents.length > 0) markers.push(t("subagentRuns", { count: subagents.length }));
+  if (subagents.some((run) => run.id === status.currentId)) markers.push(t("currentSubagent"));
+  return markers.length === 0 ? base : `${base} · ${markers.join(" · ")}`;
 }
 
 /**
