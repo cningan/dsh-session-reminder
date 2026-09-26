@@ -7,11 +7,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  ADAPTER_RESULTS,
+  CHANNEL_IDS,
+  createChannelAdapters,
   createDelivery,
   DELIVERY_OUTCOMES,
   hasNativeBridge,
   readBrowserPermission,
-  readUserActivation
+  readCapabilities,
+  readUserActivation,
+  runDeliveryChain
 } from "../lib/client/delivery.mjs";
 
 const PLUGIN_ID = "@cningan/dsh-session-status";
@@ -323,4 +328,219 @@ test("reads sticky user activation from the platform, and says null when there i
     if (descriptor === undefined) delete globalThis.navigator;
     else Object.defineProperty(globalThis, "navigator", descriptor);
   }
+});
+
+// —— 渠道 adapter 序列（issue #1）与能力/权限的单一来源（issue #3）——
+
+/**
+ * adapter 级替身：只注入渠道做副作用所需的那些口（不模拟浏览器）。每个 adapter 都
+ * 拿得到 `capability()`（与 `createDelivery` 内部同一个派生函数），因此可用性可以单独断言。
+ */
+function adapterHarness({ windowLike = {}, permission = "granted", notification = true, throws = false } = {}) {
+  const posts = [];
+  const platforms = [];
+  const opened = [];
+  const failures = [];
+  const notices = [];
+  let tags = 0;
+
+  class FakeNotification {
+    static permission = permission;
+    static async requestPermission() { return permission; }
+    constructor(title, options) {
+      if (throws) throw new Error("constructor refused");
+      this.title = title;
+      this.options = options;
+      this.closed = false;
+      notices.push(this);
+    }
+    close() { this.closed = true; }
+  }
+
+  const ctor = notification ? FakeNotification : null;
+  const onError = (label, error) => failures.push({ label, error });
+
+  return {
+    windowLike,
+    FakeNotification,
+    notices,
+    posts,
+    platforms,
+    opened,
+    failures,
+    onError,
+    capability: () => readCapabilities({ window: windowLike, notificationCtor: ctor }),
+    adapters: createChannelAdapters({
+      readWindow: () => windowLike,
+      readNotification: () => ctor,
+      pluginId: PLUGIN_ID,
+      nextTag: () => `dshss-${++tags}`,
+      onError,
+      openSession: (sessionId) => opened.push(sessionId),
+      report: (event, payload) => posts.push({ event, payload }),
+      onPlatform: (feedback) => platforms.push(feedback)
+    })
+  };
+}
+
+test("每个渠道都是独立可测的 adapter：自己声明可用性与三种投递结果", () => {
+  const granted = adapterHarness({
+    windowLike: { dshShell: { notify() {} }, chrome: { webview: { postMessage() {} } } }
+  });
+  const [shell, webview, browser] = granted.adapters;
+  assert.deepEqual(granted.adapters.map((adapter) => adapter.id),
+    [CHANNEL_IDS.SHELL, CHANNEL_IDS.WEBVIEW, CHANNEL_IDS.BROWSER]);
+
+  const context = { notice: notice(), capability: granted.capability() };
+  assert.deepEqual(granted.adapters.map((adapter) => adapter.available(context)), [true, true, true]);
+
+  // 接住：两个原生桥共用一个落盘 channel（"native-bridge"），浏览器一个。
+  assert.deepEqual(shell.results.accepted, { channel: "native-bridge", outcome: DELIVERY_OUTCOMES.NATIVE_BRIDGE });
+  assert.deepEqual(browser.results.accepted, { channel: "browser", outcome: DELIVERY_OUTCOMES.BROWSER });
+  assert.equal(shell.send(context).result, ADAPTER_RESULTS.ACCEPTED);
+  assert.equal(webview.send(context).result, ADAPTER_RESULTS.ACCEPTED);
+  assert.equal(browser.send(context).result, ADAPTER_RESULTS.ACCEPTED);
+  assert.equal(granted.notices.length, 1);
+
+  // 被拒：桥的 send 直接抛（没有终局结论，交给后续渠道）；浏览器给的是终局拒绝。
+  granted.windowLike.dshShell = { notify() { throw new Error("bridge unavailable"); } };
+  assert.throws(() => shell.send(context), /bridge unavailable/);
+  assert.equal(shell.results.rejected, null);
+  assert.deepEqual(browser.results.rejected, { channel: "browser-error", outcome: DELIVERY_OUTCOMES.BROWSER_ERROR });
+
+  // 不可用：原生桥没有话要说，浏览器负责这一轮「无渠道」的措辞（权限 / 没有 API）。
+  const denied = adapterHarness({ permission: "denied" });
+  const deniedContext = { notice: notice(), capability: denied.capability() };
+  assert.deepEqual(denied.adapters.map((adapter) => adapter.available(deniedContext)), [false, false, false]);
+  assert.equal(denied.adapters[0].results.unavailable, null);
+  assert.deepEqual(denied.adapters[2].results.unavailable(deniedContext),
+    { channel: "browser-denied", outcome: DELIVERY_OUTCOMES.NO_CHANNEL });
+
+  const unsupported = adapterHarness({ notification: false });
+  const unsupportedContext = { notice: notice(), capability: unsupported.capability() };
+  assert.deepEqual(unsupported.adapters[2].results.unavailable(unsupportedContext),
+    { channel: "browser-unsupported", outcome: DELIVERY_OUTCOMES.NO_CHANNEL });
+});
+
+test("顺序与回退由序列驱动：shell 抛错 → webview；两个都抛 → 浏览器", () => {
+  const run = (harness) => runDeliveryChain(harness.adapters, {
+    notice: notice(),
+    capability: harness.capability(),
+    onError: harness.onError
+  });
+
+  // ① shell 抛错、webview 接住：错误表里只有 shell，接住即停（不再问浏览器）。
+  const first = adapterHarness({
+    windowLike: { dshShell: { notify() { throw new Error("down"); } }, chrome: { webview: { postMessage() {} } } }
+  });
+  const oneStep = run(first);
+  assert.equal(oneStep.delivered, true);
+  assert.equal(oneStep.adapter.id, CHANNEL_IDS.WEBVIEW);
+  assert.equal(oneStep.channel, "native-bridge");
+  assert.equal(oneStep.outcome, DELIVERY_OUTCOMES.NATIVE_BRIDGE);
+  assert.deepEqual(oneStep.errors.map((entry) => entry.channel), [CHANNEL_IDS.SHELL]);
+  assert.deepEqual(oneStep.consulted, [CHANNEL_IDS.SHELL, CHANNEL_IDS.WEBVIEW]);
+
+  // ② 两个桥都抛错：退回浏览器，两笔错误都在表里，日志标签来自渠道自己。
+  const both = adapterHarness({
+    windowLike: {
+      dshShell: { notify() { throw new Error("shell down"); } },
+      chrome: { webview: { postMessage() { throw new Error("webview down"); } } }
+    }
+  });
+  const fellBack = run(both);
+  assert.equal(fellBack.delivered, true);
+  assert.equal(fellBack.adapter.id, CHANNEL_IDS.BROWSER);
+  assert.deepEqual(fellBack.errors.map((entry) => entry.channel), [CHANNEL_IDS.SHELL, CHANNEL_IDS.WEBVIEW]);
+  assert.deepEqual(fellBack.consulted, [CHANNEL_IDS.SHELL, CHANNEL_IDS.WEBVIEW, CHANNEL_IDS.BROWSER]);
+  assert.deepEqual(both.failures.map((entry) => entry.label),
+    ["shell notification failed", "WebView notification failed"]);
+
+  // ③ 没有任何桥、权限也没给：终局渠道给「无渠道」的措辞，且这不是回退（错误表为空）。
+  const none = adapterHarness({ permission: "default" });
+  const empty = run(none);
+  assert.equal(empty.delivered, false);
+  assert.equal(empty.channel, "browser-default");
+  assert.equal(empty.outcome, DELIVERY_OUTCOMES.NO_CHANNEL);
+  assert.deepEqual(empty.errors, []);
+
+  // ④ 浏览器 API 在但构造抛错：终局拒绝（不是「无渠道」），且不计入回退错误表——
+  //    终局渠道没有「后续渠道」可言。
+  const broken = adapterHarness({ throws: true });
+  const refused = run(broken);
+  assert.equal(refused.delivered, false);
+  assert.equal(refused.channel, "browser-error");
+  assert.equal(refused.outcome, DELIVERY_OUTCOMES.BROWSER_ERROR);
+  assert.deepEqual(refused.errors, []);
+  assert.deepEqual(broken.failures.map((entry) => entry.label), ["system notification failed"]);
+});
+
+test("一次投递只派生一次能力值：可用性判定、结果与上报体用的是同一个 (issue #3)", () => {
+  let permissionReads = 0;
+  class FlippingNotification {
+    static get permission() {
+      permissionReads += 1;
+      return permissionReads === 1 ? "granted" : "denied";
+    }
+    constructor(title, options) { this.options = options; }
+    close() {}
+  }
+
+  const reports = [];
+  const delivery = createDelivery({
+    window: { focus() {} },
+    notificationCtor: FlippingNotification,
+    report: (event, payload) => reports.push({ event, payload }),
+    now: () => new Date("2026-09-26T10:20:30Z")
+  });
+
+  const result = delivery.deliver(notice(), { background: true });
+
+  assert.equal(result.outcome, DELIVERY_OUTCOMES.BROWSER);
+  assert.equal(result.channel, "browser");
+  assert.equal(result.capability.browserPermission, "granted");
+  assert.equal(result.browserPermission, "granted");
+  // 一次投递只问一次「现在有哪些渠道可用」：再读一次就会读到 denied，从而与决策分叉。
+  assert.equal(permissionReads, 1);
+  const reported = reports.find((entry) => entry.event === "deliver").payload;
+  assert.equal(reported.browserPermission, "granted");
+  assert.equal(reported.channel, "browser");
+});
+
+test("能力/权限只有一个来源：设置区那一问与投递决策取的是同一个派生值", () => {
+  class FakeNotification {
+    static permission = "granted";
+    static async requestPermission() { return "granted"; }
+    constructor() {}
+    close() {}
+  }
+  const withBridge = createDelivery({
+    window: { dshShell: { notify() {} } },
+    notificationCtor: FakeNotification
+  });
+
+  const capability = withBridge.capability();
+  assert.equal(withBridge.permission(), capability.permission);
+  assert.equal(withBridge.browserPermission(), capability.browserPermission);
+  assert.equal(withBridge.nativeBridge(), capability.nativeBridge);
+  assert.equal(capability.permission, "native");
+  assert.equal(capability.nativeBridge, true);
+  // 逐渠道的可用性也在同一个值里：adapter 只读它，不自己碰宿主对象。
+  assert.deepEqual(Object.keys(capability.channels), [CHANNEL_IDS.SHELL, CHANNEL_IDS.WEBVIEW, CHANNEL_IDS.BROWSER]);
+  assert.equal(capability.channels.browser.available, true);
+  assert.equal(capability.channels.shell.claimed, true);
+
+  // 决策用的那个值随结果一起回国，调用方（诊断记录/设置区）不必再算一次。
+  const reports = [];
+  const reporting = createDelivery({
+    window: { dshShell: { notify() {} } },
+    notificationCtor: FakeNotification,
+    report: (event, payload) => reports.push({ event, payload })
+  });
+  const result = reporting.deliver(notice(), { background: true });
+  const reported = reports.at(-1).payload;
+  assert.equal(reported.nativeBridge, result.capability.nativeBridge);
+  assert.equal(reported.browserPermission, result.capability.browserPermission);
+  assert.equal(reported.userActivation, result.capability.userActivation);
+  assert.equal(result.activation, result.capability.userActivation);
 });

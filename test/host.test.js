@@ -164,23 +164,24 @@ test("host refuses a report whose shape is not in the diagnostics contract, and 
     assert.equal(JSON.parse(accepted.body).ok, true);
 
     const lines = readLines(await readFile(diagnostics, "utf8"));
-    assert.equal(lines[0].event, "host-ready");
+    // `host-ready` 由 effect 异步写出：顺序不保证，所以按事件名找，不依赖行号。
+    const ready = lines.filter((line) => line.event === "host-ready");
+    assert.equal(ready.length, 1);
     // Host 自己写的行也标注是谁写的（`host`）：审计时不会把 Host 的事实当成 Client 观测。
-    assert.equal(lines[0].build, "host");
+    assert.equal(ready[0].build, "host");
     const refused = lines.filter((line) => line.event === "diagnostics-rejected");
     assert.deepEqual(refused.map((line) => [line.payload.event, line.payload.rejected, line.build]),
       [["telemetry", 1, "host"], ["deliver", 2, "host"]]);
     assert.match(refused[0].payload.reason, /未知事件/);
     assert.match(refused[1].payload.reason, /缺少 key/);
-    const stored = lines.at(-1);
-    assert.equal(stored.event, "client:attach");
+    const stored = lines.find((line) => line.event === "client:attach");
     assert.deepEqual(stored.payload, { hasSessionsList: true });
     assert.equal(stored.build, "debug");
   });
 });
 
 test("host stays byte-compatible with an older client: no build field when none was reported", async () => {
-  await withProfileDirectory(async () => {
+  await withProfileDirectory(async (dir) => {
     const diagnostics = diagnosticsFile();
     const ctx = createHostContext();
     apply(ctx);
@@ -193,11 +194,19 @@ test("host stays byte-compatible with an older client: no build field when none 
     }), response);
     assert.equal(response.status, 200);
 
-    const lines = readLines(await readFile(diagnostics, "utf8"));
-    const stored = lines.at(-1);
+    // 同样按事件名找记录（host-ready 是异步写的）。
+    let lines = [];
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      try {
+        lines = readLines(await readFile(diagnostics, "utf8"));
+        if (lines.some((line) => line.event === "client:status")) break;
+      } catch {}
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const stored = lines.find((line) => line.event === "client:status");
+    assert.ok(stored !== undefined, `诊断文件里应有 client:status 记录（读到 ${lines.length} 行）`);
     // 既有 envelope 的字段与取值逐字节不变：没标注构建就不写这个字段（契约只向前加字段）。
     assert.deepEqual(Object.keys(stored), ["at", "event", "payload"]);
-    assert.equal(stored.event, "client:status");
     assert.deepEqual(stored.payload, STATUS_PAYLOAD);
   });
 });
