@@ -5,6 +5,11 @@
 - 绝不通过 `cordis_inspect_query` 调用 Client Inspect。
 - 有效的自动通知 E2E（端到端）测试必须使用全新、普通的 DSH 用户会话，并且在 DSH 页面/窗口隐藏或失焦时结束。当前正在构建的会话、子 Agent、单元测试和前台设置自检都不满足该测试。
 - 不要修改 DSH 核心/preload 或 Profile 挂载配置；用户已拒绝核心变更。保留 Profile 中任何既有的 `cordis.patch.yml` 修改。
+- **插件安装只走官方渠道**：`plugin_manager`（`install_bundle`）或客户端「添加插件」；不手写 profile 的 `package.json` / `dsh.profile.bundles`，不在 `$DSH_HOME` 下建包，不在 profile 目录跑 pnpm。输入形式（详见 [`../dsh-profiles/docs/install-specs.md`](../dsh-profiles/docs/install-specs.md)）分三类：
+  1. **安装 NPM 包**：填包名（如 `dsh-visualize`），pnpm 从 registry 下载进 profile；包未发布到 npm 时不可用。
+  2. **安装 GitHub 链接**：填 `github:owner/repo` 或 `https://github.com/owner/repo`，pnpm clone+pack 进 profile，内容固化、与工作区脱钩（推荐方式）。
+  3. **安装本地插件**：填目录绝对路径 / `file:` / `link:` 只建 junction——依赖 `@deepseek-ai/*` 官方运行库时模块解析失败、插件不生效；填 `.tgz` / `.tar.gz` 绝对路径则解包进 profile。
+  更新软件包需先 `remove_bundle` 再 `install_bundle`（重复安装会被 `already-installed` 拒绝）。
 - 在真实会话停止的用户可见自动通知得到确认之前，不要声称 E2E 成功，也不要推送到 GitHub。单元测试通过并不足够。
 - 源码与提交都保留在本插件仓库内。不要暂存 Profile 运行时数据或其 Git 变更。
 
