@@ -38,7 +38,7 @@ Shell 桥的实现属于外部集成边界，不包含在本仓库中。
 
 ## 诊断
 
-Client 半边把它观察到的事实（装载快照、会话/状态数据源形状、运行边沿、前台判定、投递结果，以及平台自己的通知生命周期事件）上报给 Host 半边，后者追加写入 `<profile>/.dsh-session-status/diagnostics.jsonl`；Host 加载时还会先写一条 `host-ready`，用来区分"Host 没跑起来"与"Client 没上报"。事件词表、每种事件的载荷最小形状与记录 envelope 有**唯一 owner**（Client 发送方、Host 与读方消费同一份）；Host 是**闸门**——落盘前校验，形状不符的记录不再静默写入：请求得到 400（带回累计拒绝条数），同一份 JSONL 里留下一条 `diagnostics-rejected` 事实。每条 Client 记录还标明产生它的构建（`build`）：正式产物被压缩且不含调试能力，与调试构建不是同一台观测仪器，Host 自己写的行标 `host`。契约只向前加字段——既有字段与取值逐字节不变，未知字段与缺席的 `build`（旧 Client）都被容忍，因此 Host 与 Client 可以各自独立升级。读方因此容忍未知字段，并且**只解释它认识的事件**（Host 行或没见过的名字只出现在事件直方图里）。运行 `npm run diagnose`（或 `node scripts/check-diagnostics.mjs <文件>`）读取该文件并给出结论与退出码。**结论词与退出码语义的唯一定义是 `scripts/check-diagnostics.mjs` 头部文档中的 `VERDICTS` 表**，本文档刻意不复述它们。读方区分「投递调用成功」（`delivered: true`，即 `new Notification()` 没抛错）与「平台确认显示」（同一 key 的 `onshow` 或 `onclose`）：只有后者才是 [ADR-0001](docs/adr/0001-no-require-interaction-short-unique-tags.md) 所依赖的证据。调用成功但该 key 没有任何平台事件时给出"未确认"结论、绝不报告成功；出现 `onerror` 时给出平台拒绝结论并附上 error 文本。这样一次运行可以事后审计，而不必盯着窗口等它结束。
+Client 半边把它观察到的事实（装载快照、会话/状态数据源形状、运行边沿、前台判定、投递结果，以及平台自己的通知生命周期事件）上报给 Host 半边，后者追加写入 `<profile>/.dsh-session-status/diagnostics.jsonl`；Host 加载时还会先写一条 `host-ready`，用来区分"Host 没跑起来"与"Client 没上报"。事件词表、每种事件的载荷最小形状与记录 envelope 有**唯一 owner**（Client 发送方、Host 与读方消费同一份）；Host 是**闸门**——落盘前校验，形状不符的记录不再静默写入：请求得到 400（带回累计拒绝条数），同一份 JSONL 里留下一条 `diagnostics-rejected` 事实。每条 Client 记录还标明产生它的构建（`build`）：产物被压缩，且测试能力移出后它已是唯一的观测仪器（记录标 `production`；`debug` 保留为读方认识的历史取值），Host 自己写的行标 `host`。契约只向前加字段——既有字段与取值逐字节不变，未知字段与缺席的 `build`（旧 Client）都被容忍，因此 Host 与 Client 可以各自独立升级。读方因此容忍未知字段，并且**只解释它认识的事件**（Host 行或没见过的名字只出现在事件直方图里）。运行 `npm run diagnose`（或 `node scripts/check-diagnostics.mjs <文件>`）读取该文件并给出结论与退出码。**结论词与退出码语义的唯一定义是 `scripts/check-diagnostics.mjs` 头部文档中的 `VERDICTS` 表**，本文档刻意不复述它们。读方区分「投递调用成功」（`delivered: true`，即 `new Notification()` 没抛错）与「平台确认显示」（同一 key 的 `onshow` 或 `onclose`）：只有后者才是 [ADR-0001](docs/adr/0001-no-require-interaction-short-unique-tags.md) 所依赖的证据。调用成功但该 key 没有任何平台事件时给出"未确认"结论、绝不报告成功；出现 `onerror` 时给出平台拒绝结论并附上 error 文本。这样一次运行可以事后审计，而不必盯着窗口等它结束。
 
 ## 兼容性
 
@@ -48,16 +48,17 @@ Client 半边把它观察到的事实（装载快照、会话/状态数据源形
 
 `lib/client.js` 是**构建产物**（esbuild 打包，文件头已标注"勿手改"），源码在 `lib/client/`：
 
-- `npm run build:client` —— 正式构建：不含诊断面板、探针与测试模式 API（见 [ADR-0002](docs/adr/0002-debug-capability-only-in-debug-build.md)）；它暴露的 model 与调试构建**键完全一致**——调试能力是注入的独立 module，不属于 model
-- `npm run build:client:debug` —— 调试构建：保留诊断面板与**注入的调试工具**（`sendProbe`/`sendProbeBurst`/`sendDelayedProbe`/`setTestMode`），供本地排查
-- `npm test` —— `pretest` 先构建调试版，测试针对调试产物运行
-- `npm run check:production` —— 构建正式版并断言产物不含调试能力
+只有**一种构建**；测试能力不在本插件里（见 [ADR-0003](docs/adr/0003-test-capability-lives-outside-the-plugin.md)）：
+
+- `npm run build:client` —— 唯一的产物：不含任何测试 UI，但会注册测试服务 `sessionStatusTest`（`ctx.provide`），即仓库内独立 `dev/` 调试插件要 inject 的那条 Hook
+- `npm test` —— `pretest` 先构建该产物，测试针对它运行
+- `npm run check:production` —— 构建并断言**产物表面**：没有调试痕迹，且有测试服务 Hook（阳性对照）
 - `npm run diagnose` —— 读 `<profile>/.dsh-session-status/diagnostics.jsonl`，给出结论与退出码；它与发送方、Host 闸门消费同一份诊断契约，并且只解释它认识的事件
-- `prepack` 走正式构建，因此从 tarball 安装永远不会带上调试代码
+- `prepack` 走同一条构建，因此从 tarball 安装永远不会带上测试代码
 
 ## 构建与测试状态
 
-运行 `npm test` 可执行内置 Node 测试，覆盖会话边沿、terminal reason、渠道识别、前台抑制、连接断开误报、插件设置区注册、locale 字典语言跟随、归一化层（标题三段回退、错误详情抽取、列表/状态形状，以及前台判定的四种情形：隐藏 / 失焦 / 可见且聚焦 / 没有宿主页面，外加「只有归一化 module 可以读页面可见性/焦点」的单一来源防线）、投递层的渠道回退与平台事件回灌（只注入最小替身，不模拟整个浏览器；每个渠道都是可独立直测的 adapter，喂一份能力值就能断言它的可用性与三种结果），设置区与调试工具（没有注入方时不渲染调试 UI、注入后探针可达、诊断行的页面事实只渲染注入值），**model 表面一致性**（正式与调试 bundle 的 `Object.keys(model)` 完全相同且不含调试键），诊断读方的结论（固定样本 JSONL：平台确认显示 / 平台拒绝 / 未确认三种投递），**诊断契约**（词表、落盘前缀规则、形状表自身良构、合法记录的定点变异逐条被拒、未知字段的前向兼容、envelope 字段顺序、读方只解释它认识的事件、诚实的构建标注，以及真实产物上报的每条记录都通过同一份校验），以及**能力/权限的单一来源**（一次投递只派生一次、设置区那一问与逐渠道可用性取自同一个值，外加「宿主能力只由投递 module 读取」的源码防线）。判定族断言都在这些 Node 直测里；整套浏览器模拟（`vm`）只保留 5 条装配级集成测试（订阅 → 判定 → 文案 → 投递 → 上报），只断言走完整装配路径才能观察的事实。当前 Client 文件本身就是 DSH loader bundle；这些测试不能代替 DSH 集成和真实通知验证。
+运行 `npm test` 可执行内置 Node 测试，覆盖会话边沿、terminal reason、渠道识别、前台抑制、连接断开误报、插件设置区注册、locale 字典语言跟随、归一化层（标题三段回退、错误详情抽取、列表/状态形状，以及前台判定的四种情形：隐藏 / 失焦 / 可见且聚焦 / 没有宿主页面，外加「只有归一化 module 可以读页面可见性/焦点」的单一来源防线）、投递层的渠道回退与平台事件回灌（只注入最小替身，不模拟整个浏览器；每个渠道都是可独立直测的 adapter，喂一份能力值就能断言它的可用性与三种结果），设置区（只有正常使用者那一行：说明 + 权限/渠道状态 + 发送测试提醒，类名与文案里都没有调试 UI），**测试服务**（前台覆盖三态各自对投递抑制的影响——两个方向都可验证、三态之外的取值按 `auto`、`deliverAdHoc` 与自动提醒共用投递路径与键序号计数器且同样服从前台抑制、订阅/退订、覆盖的影响在上报里看得见），**产物表面**（`Object.keys(model)` 固定、服务经 `ctx.provide` 注册且只有契约的四个方法、产物无调试痕迹但有 Hook 特征作为阳性对照），诊断读方的结论（固定样本 JSONL：平台确认显示 / 平台拒绝 / 未确认三种投递），**诊断契约**（词表、落盘前缀规则、形状表自身良构、合法记录的定点变异逐条被拒、未知字段的前向兼容、envelope 字段顺序、读方只解释它认识的事件、诚实的构建标注，以及真实产物上报的每条记录都通过同一份校验），以及**能力/权限的单一来源**（一次投递只派生一次、设置区那一问与逐渠道可用性取自同一个值，外加「宿主能力只由投递 module 读取」的源码防线）。判定族断言都在这些 Node 直测里；整套浏览器模拟（`vm`）只保留 5 条装配级集成测试（订阅 → 判定 → 文案 → 投递 → 上报），只断言走完整装配路径才能观察的事实。当前 Client 文件本身就是 DSH loader bundle；这些测试不能代替 DSH 集成和真实通知验证。
 
 ## 已知限制
 
