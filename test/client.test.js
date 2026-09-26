@@ -496,5 +496,36 @@ test("the interrupted probe mirrors the automatic reminder parameters", () => {
 
   assert.equal(harness.notices.length, 1);
   assert.equal(harness.notices[0].title, "Session interrupted or stopped");
-  assert.equal(harness.notices[0].options.requireInteraction, true);
+  assert.equal(harness.notices[0].options.requireInteraction, undefined);
+});
+
+// 实测（实验 A vs 实验 B）：requireInteraction=true 的通知在桌面 WebView 里构造成功，
+// 但平台完全不显示，也不触发 onshow/onerror/onclose；requireInteraction=false 才能显示。
+// 因此任何提醒都不得请求常驻。
+test("never requests an interaction-required stop notice, which the desktop WebView silently drops", () => {
+  const harness = createHarness({
+    currentId: "current",
+    statuses: new Map([["current", { running: true, completionUnread: false }]])
+  });
+
+  // 无 turn/end 原因 → 通用停止（kind=interrupted，正是曾经会请求常驻的那一类）
+  harness.setStatuses(new Map([["current", { running: false, completionUnread: false }]]));
+
+  assert.equal(harness.notices.length, 1);
+  assert.equal(harness.notices[0].options.requireInteraction, undefined);
+});
+
+test("never requests an interaction-required pending notice either", () => {
+  const harness = createHarness({
+    currentId: "current",
+    statuses: new Map([["current", { running: true, completionUnread: false }]])
+  });
+
+  harness.setStatuses(new Map([[
+    "current",
+    { running: true, pendingInteraction: { kind: "approval" }, completionUnread: false }
+  ]]));
+
+  assert.equal(harness.notices.length, 1);
+  assert.equal(harness.notices[0].options.requireInteraction, undefined);
 });

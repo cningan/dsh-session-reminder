@@ -16,7 +16,7 @@
 
 - DSH workbench 中依次尝试 `window.dshShell.notify(payload)` 与 `window.chrome.webview.postMessage(payload)`。已检查的 Desktop bundle 没有插件可调用的 flash-only API；其中 `flashFrame` 仅用于内部模态 UI。检查到的 preload 暴露 `dshDesktop`，但未找到通知方法；目标运行时是否额外注入可选的 `dshShell`/WebView 通知桥仍未验证。独立闪烁需要改 DSH 核心/preload，用户选择不改，因此插件保留现有桥接；没有可用桥接或桥接调用均抛错时，才回退到浏览器通知。已暴露但静默无操作的桥接无法由插件识别。
 - 没有 workbench 通知桥成功投递时，会在浏览器权限已授予的情况下回退到浏览器 Notification API；直接浏览器访问时该 API 是主要渠道。
-- 浏览器通知通过 `silent: false` 请求平台声音。原生桥载荷不含声音字段，其声音行为由外部 workbench 决定。实际声音仍由浏览器/WebView 与 Windows 设置决定；插件不能覆盖静音、专注助手或音量设置。
+- 浏览器通知通过 `silent: false` 请求平台声音，且使用逐条唯一的 `tag`；**绝不设置 `requireInteraction`**。桌面 WebView 下 `requireInteraction: true` 的通知会被平台静默丢弃——构造成功，但平台既不显示、也不触发 `onshow`/`onerror`/`onclose`（2026-09-26 由 A/B 探针实测确认）。因此所有提醒都按系统默认超时自动消失。原生桥载荷不含声音字段，其声音行为由外部 workbench 决定。实际声音仍由浏览器/WebView 与 Windows 设置决定；插件不能覆盖静音、专注助手或音量设置。
 
 Shell 桥的实现属于外部集成边界，不包含在本仓库中。
 
