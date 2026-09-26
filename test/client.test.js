@@ -566,3 +566,17 @@ test("test mode delivers while the page is still foregrounded", () => {
   assert.equal(delivery.body.payload.delivered, true);
   assert.equal(delivery.body.payload.background, false);
 });
+
+test("a burst probe delivers every notice with a short unique tag", () => {
+  const harness = createHarness({ currentId: "current", focused: false });
+  assert.equal(harness.model.sendProbeBurst("test", 3), 3);
+
+  assert.equal(harness.notices.length, 3);
+  const tags = harness.notices.map((notice) => notice.options.tag);
+  assert.equal(new Set(tags).size, 3);
+  for (const tag of tags) {
+    // Windows toast 对 tag 长度敏感：必须是短的、唯一的，不能拼会话 id。
+    assert.match(tag, /^dshss-\d+$/);
+    assert.ok(tag.length <= 24, `tag too long: ${tag}`);
+  }
+});
