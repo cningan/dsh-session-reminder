@@ -138,7 +138,7 @@ function createHarness({ statuses = new Map(), currentId, detailBySession = {}, 
   vm.runInNewContext(clientBundle, {
     window,
     document,
-    navigator: { language: "en" },
+    navigator: { language: "en", userActivation: { isActive: false, hasBeenActive: false } },
     Notification: MockNotification,
     Map,
     setTimeout: (fn) => { try { fn(); } catch {} return 0; },
@@ -528,4 +528,16 @@ test("never requests an interaction-required pending notice either", () => {
 
   assert.equal(harness.notices.length, 1);
   assert.equal(harness.notices[0].options.requireInteraction, undefined);
+});
+
+test("reports the user activation state alongside a delivery", () => {
+  const harness = createHarness({
+    currentId: "current",
+    statuses: new Map([["current", { running: true, completionUnread: false }]])
+  });
+
+  harness.setStatuses(new Map([["current", { running: false, completionUnread: false }]]));
+
+  const delivery = harness.reports.filter((entry) => entry.body.event === "deliver").at(-1);
+  assert.deepEqual(delivery.body.payload.userActivation, { active: false, everActive: false });
 });
