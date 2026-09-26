@@ -1,4 +1,4 @@
-# 14: dsh.client.inject 里 slots/sessions 的提供方包名未经运行时验证
+# 14: dsh.client.inject 里 sessions 的提供方包名未经运行时验证
 
 **Status:** needs-info
 **Blocked by:** None（可立即开始）
@@ -69,3 +69,7 @@ Harness 文档写明 `dsh.client.inject` 的条目「only order activation and s
 **cningan · 2026-09-26T19:25:25Z**
 
 已在 commit 0343264 落地：slots 的提供方改为 @deepseek-ai/dsh-client-ui-slots，package.json 的 dsh.client.inject 同步（交叉校验直测仍绿）。sessions 一行保留原值并在源码注释里标注「未经运行时确认」。本票范围缩小为：确认 sessions 的提供方（需真机），故改标 needs-info。
+
+
+- 2026-09-27（维护者）：范围再缩小。`slots` 服务已随主插件设置区移除（commit afcd4c7）从 `CLIENT_DEPENDENCIES` 出清单，所以本票只剩 **`sessions` 一项**待真机确认。原文里 `slots` 的查证过程与「五个服务项」验收按历史记录保留、不再作为验收口径。
+

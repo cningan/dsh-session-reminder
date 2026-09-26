@@ -20,3 +20,8 @@
 **cningan · 2026-09-26T17:53:26Z**
 
 已由 commit f4b9211 完成：client/settings 与 client/debug-tools 抽出，调试能力从 model 表面移走、改为装配层显式注入；model 公开面在两种构建里一致（getSnapshot/subscribe/requestPermission/sendTestNotification 四键）。npm test 118/118 绿，check:production 通过；差分 5 变体 x 320 步逐字段零差异（含设置区元素树、样式表、控制台记录、model 键集合）。
+
+
+
+- 2026-09-27（维护者）：本票主题 `client/settings` 已在 commit afcd4c7 **被整体删除**（用户要求主插件不含任何设置界面）。票内「设置区行为不变」一类验收在当下已不成立——保留本票只为记录当时的重构过程，**不要**据此恢复设置行。
+
