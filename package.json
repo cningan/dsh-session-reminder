@@ -6,9 +6,8 @@
   "type": "module",
   "scripts": {
     "build:client": "node scripts/build-client.mjs",
-    "build:client:debug": "node scripts/build-client.mjs --debug",
     "prepack": "node scripts/build-client.mjs",
-    "pretest": "node scripts/build-client.mjs --debug",
+    "pretest": "node scripts/build-client.mjs",
     "test": "node --test",
     "check:production": "node scripts/build-client.mjs && node scripts/check-production-bundle.mjs",
     "diagnose": "node scripts/check-diagnostics.mjs"
@@ -20,7 +19,8 @@
     "README.md",
     "README.zh.md",
     "SPEC.md",
-    "CONTEXT.md"
+    "CONTEXT.md",
+    "!dev"
   ],
   "main": "lib/index.js",
   "exports": {

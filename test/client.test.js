@@ -5,7 +5,7 @@
  * 判定族（停止/运行边沿、原因分类、去重、抑制、等待优先于停止、tag 唯一性、权限派生）
  * 以及各 module 内部的行为，全部由 Node 直测承担——`test/core-*.test.mjs`、
  * `test/delivery.test.mjs`、`test/diagnostics-sink.test.mjs`、`test/settings.test.mjs`、
- * `test/debug-tools.test.mjs`、`test/model-surface.test.mjs`、`test/client-assembly.test.mjs`；
+ * `test/test-service.test.mjs`、`test/model-surface.test.mjs`、`test/client-assembly.test.mjs`；
  * 它们不 `import vm`、不模拟浏览器。本文件不再逐条重建假浏览器。
  *
  * 留在这里的断言都是**装配层独有**、别处观察不到的事实：
@@ -13,7 +13,7 @@
  *   - `turn/end` 事件窗口缓存，以及「新一轮丢弃上一轮原因」的定界
  *   - 语义 → 通知标题/正文的文案组装（含跟随官方 locale 词典的语言）
  *   - 前台否决的**记账与上报**（按设计静默也要写一条可区分的投递记录）
- *   - 调试连接口（探针与自动提醒共用同一个投递出口，因此同样服从前台否决）
+ *   - 测试服务的临时投递与自动提醒共用同一个投递出口，因此同样服从前台否决
  *   - `settings.section` 的注册元数据（name / id / order / label）
  */
 import assert from "node:assert/strict";
@@ -21,7 +21,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import vm from "node:vm";
 
-// `pretest` 先构建调试产物，测试针对它运行：正式构建里没有调试能力（见 model-surface 直测）。
+// `pretest` 先构建产物，测试针对它运行（构建脚本只有一种产物）。
 const clientBundle = await readFile(new URL("../lib/client.js", import.meta.url), "utf8");
 
 const DIAGNOSTICS_PATH = "/plugins/dsh-session-status/diagnostics";
@@ -49,7 +49,7 @@ const running = (id) => [id, { running: true, completionUnread: false }];
 const stopped = (id, overrides = {}) => [id, { running: false, completionUnread: false, ...overrides }];
 
 /**
- * 装配替身：官方源（列表 / 状态 / 当前会话 / 连接 / locale / slots / effect）全部注入，
+ * 装配替身：官方源（列表 / 状态 / 当前会话 / 连接 / locale / slots / effect / provide）全部注入，
  * 外加最小假 window / document / Notification / fetch。返回观察点，不返回任何实现细节。
  *
  * `bridges: "throwing"` 表示两个原生桥都在场但都会抛错（用来观察渠道回退）。
@@ -67,6 +67,7 @@ function createHarness({
   const reports = [];
   const bridgeAttempts = [];
   const registrations = [];
+  const provided = {};
   const handlers = new Map();
 
   class MockNotification {
@@ -160,6 +161,12 @@ function createHarness({
       bind(_namespace) { return translate; }
     },
     effect(effect) { effect(); },
+    // Cordis 服务注册面：插件用 `ctx.provide("sessionStatusTest", service)` 交出测试服务
+    // （官方 locale 服务同款用法）。这里只收下它，测试通过返回值消费。
+    provide(name, value) {
+      provided[name] = value;
+      return () => { delete provided[name]; };
+    },
     slots: {
       inject(_slot, callback) { callback(); return () => {}; },
       register(meta, render) { registrations.push({ meta, render }); return () => {}; }
@@ -192,7 +199,7 @@ function createHarness({
     bridgeAttempts,
     registration,
     model: settingsProps.model,
-    debugTools: settingsProps.debugTools,
+    service: provided.sessionStatusTest,
     setStatuses: (next) => sessionStatus.set(next),
     setRows: (byId) => list.set({ byId }),
     /** 某一类诊断事件的 payload 列表（读方落盘的记录形状）。 */
@@ -327,15 +334,16 @@ test("选中会话的原因来源端到端：turn/end 事件窗口 → 官方快
   assert.equal(harness.notices.length, 4);
 });
 
-test("前台否决：自动提醒与调试探针都不投递，但都写一条 suppressed-foreground 记录", () => {
-  // 后台（默认失焦）：探针照常投递。
+test("前台否决：自动提醒与测试服务的临时投递都不投递，但都写一条 suppressed-foreground 记录", () => {
+  // 后台（默认失焦）：测试投递照常到达。
   const background = createHarness({ currentId: "current", statuses: new Map([running("current")]) });
-  background.debugTools.sendDelayedProbe();
+  assert.equal(background.service.deliverAdHoc("test"), true);
   assert.equal(background.notices.length, 1);
   assert.equal(background.notices[0].title, "DSH reminder test");
   const backgroundDelivery = background.payloads("deliver").at(-1);
   assert.equal(backgroundDelivery.channel, "browser");
   assert.equal(backgroundDelivery.delivered, true);
+  assert.equal(backgroundDelivery.key, "test-probe:test:1");
 
   const foreground = createHarness({
     currentId: "current",
@@ -351,10 +359,16 @@ test("前台否决：自动提醒与调试探针都不投递，但都写一条 s
   assert.equal(suppressed.delivered, false);
   assert.equal(suppressed.background, false);
 
-  // 探针经装配层的同一个投递出口投递（键前缀不同），所以同样服从前台否决。
-  foreground.debugTools.sendDelayedProbe();
+  // 测试服务经装配层的同一个投递出口投递（键前缀不同），所以同样服从前台否决。
+  assert.equal(foreground.service.deliverAdHoc("test"), false);
   assert.equal(foreground.notices.length, 0);
   assert.equal(foreground.payloads("deliver").at(-1).channel, "suppressed-foreground");
+
+  // 测试通道的覆盖只替换前台判定：覆盖成失焦后同一个调用就投得出去。
+  foreground.service.setForegroundOverride("background");
+  assert.equal(foreground.service.deliverAdHoc("test"), true);
+  assert.equal(foreground.notices.length, 1);
+  assert.equal(foreground.payloads("deliver").at(-1).channel, "browser");
 });
 
 test("渠道回退：两个原生桥都抛错时退回浏览器通知，权限快照跟着刷新", () => {

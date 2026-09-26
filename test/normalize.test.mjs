@@ -223,7 +223,7 @@ test("前台判定在 lib/ 下只有一处实现：可见性/焦点只由归一�
   const names = files.map((file) => relative(LIB_ROOT, file).split(sep).join("/"));
 
   // 阳性对照：扫描面确实覆盖了归一化 module 与它的消费方，避免断言退化成永真。
-  for (const expected of ["client/normalize.mjs", "client/assembly.mjs", "client/debug-tools.mjs", "client/settings.mjs"]) {
+  for (const expected of ["client/normalize.mjs", "client/assembly.mjs", "client/test-service.mjs", "client/settings.mjs"]) {
     assert.ok(names.includes(expected), `扫描面应包含 ${expected}`);
   }
 

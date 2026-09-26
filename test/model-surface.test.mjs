@@ -1,52 +1,41 @@
 /**
- * **model 表面一致性**直测（本票验收核心）：同一份源码，在内存里各打一次**正式**与
- * **调试** bundle（esbuild `write: false`，不动仓库里的 `lib/client.js`），装进同一套最小
- * 假浏览器，断言：
+ * **产物表面直测**：把真正的产物（`lib/client.js`，DSH loader bundle）装进最小假浏览器，
+ * 断言插件对外暴露的两张面，以及测试服务在这条真实投递链路上的行为。
  *
- *   1. 两种构建下 `Object.keys(model)` **完全相同**，且与调试键无交集——「一个是否存在
- *      取决于编译期常量的表面不是 interface」（issue #4 的走查意见）；
- *   2. 调试能力只经**显式注入**可达：正式构建不构造 `debugTools`（设置区拿到 null），
- *      调试构建构造它，探针的键与自检共用同一个计数器（逐字节不变）；
- *   3. 正式产物里没有调试能力、调试产物里有（阳性对照，防止断言退化成永真）；
- *   4. 前台否决与测试模式：正式构建恒按前台规则抑制，调试构建里注入的测试模式开关
- *      仍能覆盖它；两种构建都报告 `testMode` 这一位（正式恒为 false）。
+ *   1. **model 面**：`Object.keys(model)` 就是设置区与装配层共同消费的那几个方法；
+ *   2. **服务面**：插件经 `ctx.provide("sessionStatusTest", ...)` 注册测试服务，且服务只
+ *      交出契约约定的四个方法（`requestPermission` / `sendTestNotification` 属设置区，
+ *      不泄漏到 Hook 面上）；
+ *   3. **前台覆盖三态**：`auto` 与宿主事实一致；`foreground` 强制抑制；`background`
+ *      强制放行——两个方向都能验证「仅前台之外才投递」这条承重规则；
+ *   4. **临时投递共用投递路径**：`deliverAdHoc` 与自动提醒、设置页自检共用同一个投递实例
+ *      与同一个键序号计数器，因此同样服从前台抑制，键与既有 JSONL 逐字节一致；
+ *   5. **订阅/退订**：状态变化（覆盖、投递）通知一次，退订后不再通知；
+ *   6. **诊断契约**：真实产物造出的每条上报都过 Host 的闸门，且标注产生它的构建；
+ *      覆盖的影响在上报里看得见（`background` 与渠道跟着覆盖走）。
+ *
+ * 这些断言的对象是**产物**（不是源码模块）：调试 UI 已移出主插件（ADR-0003），所以这里
+ * 不再有「正式/调试双构建」的比较——只有一种构建，它的表面必须稳定。
  */
 import assert from "node:assert/strict";
-import { fileURLToPath } from "node:url";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import vm from "node:vm";
 
-import { build } from "esbuild";
-
 import { CLIENT_BUILDS, validateRecord } from "../lib/diagnostics-contract.mjs";
+import { TEST_SERVICE_NAME } from "../lib/client/test-service.mjs";
 
-const ENTRY = fileURLToPath(new URL("../lib/client/entry.mjs", import.meta.url));
+// `pretest` 先构建产物，测试针对它运行（构建脚本只有一种产物）。
+const clientBundle = await readFile(new URL("../lib/client.js", import.meta.url), "utf8");
 
-/** model 的公开面：两种构建都必须一字不差。 */
-const PUBLIC_KEYS = ["getSnapshot", "subscribe", "requestPermission", "sendTestNotification"];
-/** 调试键：不得出现在 model 上（它们是注入的 `client/debug-tools` 的方法）。 */
-const DEBUG_KEYS = ["sendProbe", "sendProbeBurst", "sendDelayedProbe", "setTestMode"];
-/** 正式产物里不得出现的调试特征（与 scripts/check-production-bundle.mjs 同一张表）。 */
-const DEBUG_MARKERS = ["当前会话在状态", "sendProbe", "setTestMode", "test-probe"];
-
-async function bundleOf(debug) {
-  const result = await build({
-    entryPoints: [ENTRY],
-    bundle: true,
-    format: "iife",
-    platform: "browser",
-    target: ["chrome120"],
-    charset: "utf8",
-    legalComments: "none",
-    minify: !debug,
-    write: false,
-    define: { __DEBUG__: debug ? "true" : "false" }
-  });
-  return result.outputFiles[0].text;
-}
-
-const productionBundle = await bundleOf(false);
-const debugBundle = await bundleOf(true);
+/** model 的公开面：设置区（权限/自检）与测试服务（收敛后的四个方法）都由它派生。 */
+const PUBLIC_KEYS = ["getSnapshot", "subscribe", "requestPermission", "sendTestNotification", "setForegroundOverride", "deliverAdHoc"];
+/** 测试服务的面：契约约定的四个方法，一个不多。 */
+const SERVICE_KEYS = ["setForegroundOverride", "getSnapshot", "subscribe", "deliverAdHoc"];
+/** 产物里不得出现的调试痕迹（与 scripts/check-production-bundle.mjs 同一张表的代码部分）。 */
+const DEBUG_MARKERS = ["诊断·", "sendProbe", "setTestMode", "dshss-settings-diagnostics", "dshss-settings-tools"];
+/** 产物里必须出现的 Hook 特征（阳性对照）。 */
+const HOOK_MARKERS = ["sessionStatusTest", "setForegroundOverride", "deliverAdHoc"];
 
 function observable(initial) {
   let value = initial;
@@ -64,11 +53,11 @@ function observable(initial) {
   };
 }
 
-/** 最小假浏览器：官方源的替身 + 假 React + 假 fetch（上报请求体原样收下）。 */
+/** 最小假浏览器：官方源的替身 + 假 React + 假 fetch（上报请求体原样收下）+ 假 provide。 */
 function launch(source, { focused = false } = {}) {
   const reports = [];
   const notices = [];
-  const opened = [];
+  const provided = {};
 
   class MockNotification {
     static permission = "granted";
@@ -125,7 +114,7 @@ function launch(source, { focused = false } = {}) {
 
   let registration;
   const ctx = {
-    sessions: { list, binding: () => void 0, open: (id) => opened.push(id) },
+    sessions: { list, binding: () => void 0, open() {} },
     uiSession: { sessionStatus, adapter: { current } },
     connection: { state: connection },
     locale: {
@@ -136,6 +125,11 @@ function launch(source, { focused = false } = {}) {
       const dispose = effect();
       return typeof dispose === "function" ? dispose : () => {};
     },
+    // Cordis 的服务注册面（`ctx.provide(name, value)`，官方 locale 服务同款用法）。
+    provide(name, value) {
+      provided[name] = value;
+      return () => { delete provided[name]; };
+    },
     slots: {
       inject(_slot, callback) { callback(); return () => {}; },
       register(meta, render) { registration = { meta, render }; return () => {}; }
@@ -145,7 +139,7 @@ function launch(source, { focused = false } = {}) {
   vm.runInNewContext(source, {
     window,
     document,
-    navigator: { language: "en" },
+    navigator: { language: "en", userActivation: { isActive: false, hasBeenActive: false } },
     Notification: MockNotification,
     Map,
     setTimeout: (fn) => { fn(); return 0; },
@@ -159,137 +153,221 @@ function launch(source, { focused = false } = {}) {
   window.plugin.apply(ctx);
 
   const settingsProps = registration.meta.inject();
+  const model = settingsProps.model;
+  const service = provided[TEST_SERVICE_NAME];
   return {
-    model: settingsProps.model,
-    debugTools: settingsProps.debugTools,
+    model,
+    service,
+    provided,
     settingsProps,
     renderSettings: () => registration.render(settingsProps),
     registration,
     reports,
     notices,
-    opened,
-    setStatuses: (next) => sessionStatus.set(next)
+    records: () => reports.map((report) => JSON.parse(report.body)),
+    payloads: (event) => reports
+      .map((report) => JSON.parse(report.body))
+      .filter((record) => record.event === event)
+      .map((record) => record.payload),
+    /** 触发一次「运行 → 停止」边沿（自动提醒的触发条件）。 */
+    stop: () => {
+      sessionStatus.set(new Map([["current", { running: true, completionUnread: false }]]));
+      sessionStatus.set(new Map([["current", { running: false, completionUnread: false }]]));
+    }
   };
 }
 
-function payloads(launchResult, event) {
-  return launchResult.reports
-    .map((report) => JSON.parse(report.body))
-    .filter((record) => record.event === event)
-    .map((record) => record.payload);
-}
+test("model 与测试服务的键集合固定且互不越界", () => {
+  const harness = launch(clientBundle);
 
-test("正式构建与调试构建下 model 的键集合完全相同，且与调试键无交集", () => {
-  const production = launch(productionBundle);
-  const debug = launch(debugBundle);
-
-  assert.deepEqual(Object.keys(production.model), PUBLIC_KEYS);
-  assert.deepEqual(Object.keys(debug.model), PUBLIC_KEYS);
-  assert.deepEqual(Object.keys(debug.model), Object.keys(production.model));
-
-  for (const key of DEBUG_KEYS) {
-    assert.equal(Object.hasOwn(production.model, key), false, `正式构建的 model 不应有 ${key}`);
-    assert.equal(Object.hasOwn(debug.model, key), false, `调试构建的 model 也不应有 ${key}（调试能力是注入的）`);
+  assert.deepEqual(Object.keys(harness.model), PUBLIC_KEYS);
+  assert.deepEqual(Object.keys(harness.settingsProps).sort(), ["model", "t"]);
+  // 服务只交出契约的四个方法：设置区协作者不泄漏到 Hook 面上。
+  assert.deepEqual(Object.keys(harness.service), SERVICE_KEYS);
+  for (const key of ["requestPermission", "sendTestNotification"]) {
+    assert.equal(Object.hasOwn(harness.service, key), false, `服务不应暴露 ${key}`);
   }
 });
 
-test("调试能力只经显式注入可达：正式构建不构造它，调试构建构造它并交给设置区", () => {
-  const production = launch(productionBundle);
-  const debug = launch(debugBundle);
+test("插件经 ctx.provide 注册测试服务，服务随插件 fiber 释放", () => {
+  const harness = launch(clientBundle);
 
-  assert.equal(production.debugTools, null);
-  assert.equal(production.settingsProps.debugTools, null);
-  assert.ok(debug.debugTools !== null);
-  for (const key of DEBUG_KEYS) {
-    assert.equal(typeof debug.debugTools[key], "function", `调试工具应提供 ${key}`);
-  }
-  assert.equal(debug.settingsProps.debugTools, debug.debugTools);
+  assert.deepEqual(Object.keys(harness.provided), [TEST_SERVICE_NAME]);
+  assert.equal(TEST_SERVICE_NAME, "sessionStatusTest");
+  assert.equal(typeof harness.service.setForegroundOverride, "function");
+  assert.equal(typeof harness.service.getSnapshot, "function");
+  assert.equal(typeof harness.service.subscribe, "function");
+  assert.equal(typeof harness.service.deliverAdHoc, "function");
 });
 
-test("设置区元素树同形：正式构建只留两个空位，调试构建在那里给出诊断块与工具行", () => {
-  const production = launch(productionBundle);
-  const debug = launch(debugBundle);
-  const productionTree = production.renderSettings();
-  const debugTree = debug.renderSettings();
+test("设置区只留正常使用者那一行（说明 + 状态/自检），没有调试 UI 的痕迹", () => {
+  const harness = launch(clientBundle);
+  const tree = harness.renderSettings();
 
-  assert.equal(productionTree.props.children.length, 3);
-  assert.equal(debugTree.props.children.length, 3);
-  assert.equal(productionTree.props.children[1], null);
-  assert.equal(productionTree.props.children[2], null);
-  assert.equal(debugTree.props.children[1].props.className, "dshss-settings-diagnostics");
-  assert.equal(debugTree.props.children[2].props.className, "dshss-settings-tools");
+  assert.equal(tree.props.className, "dshss-settings");
+  // 唯一的一行：说明 + 状态/自检；没有诊断块与工具行的位置。
+  assert.equal(tree.props.children.length, 1);
+  assert.equal(tree.props.children[0].props.className, "dshss-settings-row");
+
+  const walk = (node, out = []) => {
+    if (node === null || typeof node !== "object") return out;
+    if (typeof node.props?.className === "string") out.push(node.props.className);
+    const children = node.props?.children;
+    if (Array.isArray(children)) for (const child of children) walk(child, out);
+    return out;
+  };
+  const classes = walk(tree);
+  assert.ok(!classes.includes("dshss-settings-diagnostics"));
+  assert.ok(!classes.includes("dshss-settings-tools"));
+  assert.ok(classes.includes("dshss-settings-description"));
 });
 
-test("正式产物没有调试能力，调试产物有（阳性对照）", () => {
+test("产物没有调试痕迹，但带着测试服务 Hook（阳性对照）", () => {
+  assert.equal(clientBundle.includes("sessionStatusTest"), true);
   for (const marker of DEBUG_MARKERS) {
-    assert.equal(productionBundle.includes(marker), false, `正式产物不应包含 ${marker}`);
-    assert.equal(debugBundle.includes(marker), true, `调试产物应保留 ${marker}`);
+    assert.equal(clientBundle.includes(marker), false, `产物不应包含调试痕迹 ${marker}`);
+  }
+  for (const marker of HOOK_MARKERS) {
+    assert.equal(clientBundle.includes(marker), true, `产物应保留 Hook 特征 ${marker}`);
   }
 });
 
-test("探针的键与设置页自检共用同一个计数器（逐字节不变）", () => {
-  const debug = launch(debugBundle);
+test("前台覆盖三态：auto 跟随宿主、foreground 强制抑制、background 强制放行", () => {
+  // 宿主说「页面在前台」（聚焦且可见）：auto 与 foreground 都该抑制。
+  const foreground = launch(clientBundle, { focused: true });
+  assert.equal(foreground.service.getSnapshot().page.background, false);
 
-  assert.equal(debug.debugTools.sendProbe("test"), true);
-  assert.equal(debug.model.sendTestNotification(), true);
+  foreground.stop();
+  assert.equal(foreground.notices.length, 0);
+  assert.equal(foreground.payloads("deliver").at(-1).channel, "suppressed-foreground");
 
-  const deliveries = payloads(debug, "deliver");
-  assert.equal(deliveries[0].key, "test-probe:test:1");
-  assert.equal(deliveries[0].kind, "test");
-  assert.equal(deliveries[1].key, "test:2");
-  // 探针的载荷与自检同源（文案来自官方 locale 字典）。
-  assert.equal(debug.notices[0].title, "DSH reminder test");
+  assert.equal(foreground.service.setForegroundOverride("foreground"), "foreground");
+  assert.equal(foreground.service.getSnapshot().foregroundOverride, "foreground");
+  // 覆盖只替换结论，不改写证据：可见性/焦点仍是宿主原值。
+  assert.deepEqual(
+    { visibility: foreground.service.getSnapshot().page.visibility, focused: foreground.service.getSnapshot().page.focused },
+    { visibility: "visible", focused: true }
+  );
+  foreground.stop();
+  assert.equal(foreground.notices.length, 0);
+  assert.equal(foreground.payloads("deliver").at(-1).channel, "suppressed-foreground");
+
+  assert.equal(foreground.service.setForegroundOverride("background"), "background");
+  assert.equal(foreground.service.getSnapshot().page.background, true);
+  foreground.stop();
+  assert.equal(foreground.notices.length, 1);
+  const delivered = foreground.payloads("deliver").at(-1);
+  assert.equal(delivered.channel, "browser");
+  assert.equal(delivered.delivered, true);
+  // 覆盖的影响在上报里看得见：这一条不是「按设计静默」，而是真的投了出去。
+  assert.equal(delivered.background, true);
+
+  // 反向：宿主说「页面在后台」（失焦）时，foreground 覆盖能强制抑制——两个方向都可验证。
+  const background = launch(clientBundle, { focused: false });
+  assert.equal(background.service.getSnapshot().page.background, true);
+  assert.equal(background.service.setForegroundOverride("foreground"), "foreground");
+  assert.equal(background.service.getSnapshot().page.background, false);
+  background.stop();
+  assert.equal(background.notices.length, 0);
+  assert.equal(background.payloads("deliver").at(-1).channel, "suppressed-foreground");
+
+  // 回到 auto：判定回到宿主事实，行为与从未覆盖过一致。
+  assert.equal(background.service.setForegroundOverride("auto"), "auto");
+  assert.equal(background.service.getSnapshot().page.background, true);
+  background.stop();
+  assert.equal(background.notices.length, 1);
 });
 
-test("前台否决：正式构建恒按前台规则抑制，调试构建里注入的测试模式开关能覆盖它", () => {
-  const production = launch(productionBundle, { focused: true });
-  const debug = launch(debugBundle, { focused: true });
+test("setForegroundOverride 的闸门：只认三态，其余一律按 auto", () => {
+  const harness = launch(clientBundle, { focused: true });
 
-  const stop = (harness) => {
-    harness.setStatuses(new Map([["current", { running: true, completionUnread: false }]]));
-    harness.setStatuses(new Map([["current", { running: false, completionUnread: false }]]));
-  };
+  assert.equal(harness.service.setForegroundOverride("background"), "background");
+  assert.equal(harness.service.setForegroundOverride("FOREGROUND"), "auto");
+  assert.equal(harness.service.getSnapshot().foregroundOverride, "auto");
+  assert.equal(harness.service.setForegroundOverride(undefined), "auto");
+  assert.equal(harness.service.setForegroundOverride(1), "auto");
+  assert.equal(harness.service.setForegroundOverride(null), "auto");
+  assert.equal(harness.service.setForegroundOverride("auto"), "auto");
+});
 
-  stop(production);
-  assert.equal(production.notices.length, 0);
-  assert.equal(payloads(production, "deliver").at(-1).channel, "suppressed-foreground");
-  // 两种构建都报告这一位；正式构建下没有任何注入方，恒为 false。
-  assert.equal(production.model.getSnapshot().testMode, false);
+test("deliverAdHoc 与自动提醒/设置页自检共用同一个投递路径与键序号计数器", () => {
+  const harness = launch(clientBundle, { focused: false });
 
-  assert.equal(debug.model.getSnapshot().testMode, false);
-  stop(debug);
-  assert.equal(debug.notices.length, 0);
+  // 后台：临时投递照常到达，键形与既有 JSONL 一致（前缀 + kind + 序号）。
+  assert.equal(harness.service.deliverAdHoc("test"), true);
+  assert.equal(harness.notices.length, 1);
+  assert.equal(harness.notices[0].title, "DSH reminder test");
+  assert.equal(harness.payloads("deliver")[0].key, "test-probe:test:1");
 
-  debug.debugTools.setTestMode(true);
-  assert.equal(debug.model.getSnapshot().testMode, true);
-  stop(debug);
-  assert.equal(debug.notices.length, 1);
-  assert.equal(payloads(debug, "deliver").at(-1).delivered, true);
+  // 缺省 kind 是 test；`interrupted` 对照自动提醒的那一类参数。
+  assert.equal(harness.service.deliverAdHoc(), true);
+  assert.equal(harness.service.deliverAdHoc("interrupted"), true);
+  assert.equal(harness.payloads("deliver")[1].key, "test-probe:test:2");
+  assert.equal(harness.payloads("deliver")[2].key, "test-probe:interrupted:3");
+  assert.equal(harness.payloads("deliver")[2].kind, "interrupted");
+  assert.equal(harness.notices[2].title, "Session interrupted or stopped");
+
+  // 序号与设置页自检共用同一个计数器（与旧实现逐字节一致）：自检接着拿 4。
+  assert.equal(harness.model.sendTestNotification(), true);
+  assert.equal(harness.payloads("deliver")[3].key, "test:4");
+  // 与自动提醒共用同一个 delivery 实例（tag/权限/上报都在这一条链上）。
+  const delivery = harness.payloads("deliver")[3];
+  assert.equal(delivery.channel, "browser");
+  assert.equal(delivery.browserPermission, "granted");
+  assert.equal(delivery.nativeBridge, false);
+});
+
+test("deliverAdHoc 服从前台抑制：抑制时返回 false，但仍留下可区分的投递记录", () => {
+  const harness = launch(clientBundle, { focused: true });
+
+  assert.equal(harness.service.deliverAdHoc("test"), false);
+  assert.equal(harness.notices.length, 0);
+  const suppressed = harness.payloads("deliver").at(-1);
+  assert.equal(suppressed.channel, "suppressed-foreground");
+  assert.equal(suppressed.delivered, false);
+  assert.equal(suppressed.background, false);
+
+  // 覆盖成失焦之后同一个调用就投得出去（面板据此做双向验证）。
+  harness.service.setForegroundOverride("background");
+  assert.equal(harness.service.deliverAdHoc("test"), true);
+  assert.equal(harness.notices.length, 1);
+});
+
+test("subscribe：状态变化通知一次，退订后不再通知", () => {
+  const harness = launch(clientBundle, { focused: true });
+  const calls = [];
+  const off = harness.service.subscribe(() => calls.push(harness.service.getSnapshot().foregroundOverride));
+
+  harness.service.setForegroundOverride("background");
+  assert.deepEqual(calls, ["background"]);
+  // 同一个值重复写：状态没变化，不重复通知。
+  harness.service.setForegroundOverride("background");
+  assert.deepEqual(calls, ["background"]);
+
+  harness.service.deliverAdHoc("test");
+  assert.equal(calls.length, 2);
+
+  off();
+  harness.service.setForegroundOverride("auto");
+  harness.service.deliverAdHoc("test");
+  assert.equal(calls.length, 2);
+
+  // 退订是幂等的（重复调用不抛）。
+  off();
 });
 
 test("真实产物的每条上报都满足诊断契约，且自带产生它的构建", () => {
-  const production = launch(productionBundle);
-  const debug = launch(debugBundle);
-  const recordsOf = (launchResult) => launchResult.reports.map((report) => JSON.parse(report.body));
+  const harness = launch(clientBundle, { focused: true });
+  harness.service.setForegroundOverride("background");
+  harness.service.deliverAdHoc("test");
+  harness.stop();
 
-  const productionRecords = recordsOf(production);
-  const debugRecords = recordsOf(debug);
-  assert.ok(productionRecords.length > 0, "装载快照与状态摘要应各落一条");
-
-  // 发送方与校验方就同一份契约达成一致：真实产物造出的记录一条都不该被 Host 的闸门拒掉。
-  for (const [label, records, expected] of [
-    ["正式", productionRecords, CLIENT_BUILDS.PRODUCTION],
-    ["调试", debugRecords, CLIENT_BUILDS.DEBUG]
-  ]) {
-    for (const record of records) {
-      const verdict = validateRecord(record);
-      assert.equal(verdict.ok, true, `${label}构建的 ${record.event} 记录应满足契约：${verdict.reason ?? ""}`);
-      assert.equal(record.build, expected, `${label}构建的记录应标注自己是哪台仪器`);
-    }
+  const records = harness.records();
+  assert.ok(records.length > 0, "装载快照与状态摘要应各落一条");
+  for (const record of records) {
+    const verdict = validateRecord(record);
+    assert.equal(verdict.ok, true, `${record.event} 记录应满足契约：${verdict.reason ?? ""}`);
   }
-
-  // 两种构建的观测流除 `at`（时刻）与 `build`（仪器）外逐字节同形：调试能力是注入的，
-  // 不往观测流里加东西（SPEC「调试构建下的诊断记录逐字节不变」）。
-  const shape = (records) => records.map((record) => JSON.stringify({ ...record, at: null, build: null }));
-  assert.deepEqual(shape(debugRecords), shape(productionRecords));
+  // 只有一种构建：记录仍标注自己是哪台仪器（旧的 `debug` 取值留给历史记录）。
+  assert.deepEqual([...new Set(records.map((record) => record.build))], [CLIENT_BUILDS.PRODUCTION]);
 });

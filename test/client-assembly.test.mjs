@@ -5,10 +5,10 @@
  *      `package.json` 的 `dsh.client.inject`（官方包名，只用于排序激活）都由
  *      `client/assembly` 的 `CLIENT_DEPENDENCIES` 派生；这里断言两处名单一致
  *      ——任一处单方面增删都会让本测试失败，名单不再各自漂移。
- *   2. **loader 契约**：同一份源码在内存里打成正式与调试 bundle（`write: false`，
- *      不动仓库产物），装进最小假浏览器（`window.__ModuleLoader__.load`）跑一遍
- *      `factory(loadModule)`，断言拿到的是**真正的插件表面**（`apply` 函数 +
- *      `inject` 清单），而不是任何 CommonJS 拟态对象。
+ *   2. **loader 契约**：同一份源码在内存里打成 bundle（`write: false`，不动仓库产物），
+ *      装进最小假浏览器（`window.__ModuleLoader__.load`）跑一遍 `factory(loadModule)`，
+ *      断言拿到的是**真正的插件表面**（`apply` 函数 + `inject` 清单），而不是任何
+ *      CommonJS 拟态对象。
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -104,7 +104,7 @@ function launch(source) {
   return { loaded, plugin };
 }
 
-async function bundleOf(debug) {
+async function bundleOf() {
   const result = await build({
     entryPoints: [ENTRY],
     bundle: true,
@@ -113,30 +113,25 @@ async function bundleOf(debug) {
     target: ["chrome120"],
     charset: "utf8",
     legalComments: "none",
-    minify: !debug,
-    write: false,
-    define: { __DEBUG__: debug ? "true" : "false" }
+    minify: true,
+    write: false
   });
   return result.outputFiles[0].text;
 }
 
-for (const debug of [false, true]) {
-  const label = debug ? "调试" : "正式";
+test("loader 契约：__ModuleLoader__.load 拿到 id 与能跑出插件表面的 factory", async () => {
+  const { loaded, plugin } = launch(await bundleOf());
 
-  test(`loader 契约（${label}构建）：__ModuleLoader__.load 拿到 id 与能跑出插件表面的 factory`, async () => {
-    const { loaded, plugin } = launch(await bundleOf(debug));
+  assert.ok(loaded !== undefined, "bundle 应注册到 window.__ModuleLoader__.load");
+  assert.equal(loaded.id, PLUGIN_ID);
+  assert.equal(typeof loaded.factory, "function");
 
-    assert.ok(loaded !== undefined, "bundle 应注册到 window.__ModuleLoader__.load");
-    assert.equal(loaded.id, PLUGIN_ID);
-    assert.equal(typeof loaded.factory, "function");
-
-    // 真正的 ESM 模块表面：只有 apply 与 inject 两个键，没有 CommonJS 拟态残留。
-    assert.deepEqual(Object.keys(plugin), ["apply", "inject"]);
-    assert.equal(typeof plugin.apply, "function");
-    assert.ok(Array.isArray(plugin.inject));
-    assert.deepEqual([...plugin.inject], inject);
-    assert.equal(typeof plugin.require, "undefined");
-    assert.equal(typeof plugin.module, "undefined");
-    assert.equal(typeof plugin.exports, "undefined");
-  });
-}
+  // 真正的 ESM 模块表面：只有 apply 与 inject 两个键，没有 CommonJS 拟态残留。
+  assert.deepEqual(Object.keys(plugin), ["apply", "inject"]);
+  assert.equal(typeof plugin.apply, "function");
+  assert.ok(Array.isArray(plugin.inject));
+  assert.deepEqual([...plugin.inject], inject);
+  assert.equal(typeof plugin.require, "undefined");
+  assert.equal(typeof plugin.module, "undefined");
+  assert.equal(typeof plugin.exports, "undefined");
+});

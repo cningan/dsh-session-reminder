@@ -48,7 +48,7 @@ test("能力/权限的派生只有一处：宿主对象只由投递层读取", a
     "client/delivery.mjs",
     "client/assembly.mjs",
     "client/settings.mjs",
-    "client/debug-tools.mjs",
+    "client/test-service.mjs",
     "client/normalize.mjs"
   ]) {
     assert.ok(names.includes(expected), `扫描面应包含 ${expected}`);

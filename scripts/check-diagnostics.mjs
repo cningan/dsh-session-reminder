@@ -118,7 +118,7 @@ export function analyze(records) {
   const deliveries = ofEvent(DIAGNOSTIC_EVENTS.DELIVER);
   const platforms = ofEvent(DIAGNOSTIC_EVENTS.PLATFORM);
 
-  // ① 先交代观测仪器：正式产物被压缩且不含调试能力，与调试构建不是同一台仪器。
+  // ① 先交代观测仪器：记录标着自己来自哪个构建，仪器身份先亮出来。
   const builds = readBuilds(records);
   const verdict = (label, message) => conclusion(label, message, report, { build: builds });
   report.push(buildLine(builds));
@@ -189,13 +189,14 @@ export function analyze(records) {
     );
   }
 
-  // ⑥ 投递调用成功，但平台零反馈：不得给出"成功"结论。来自正式构建的记录尤其无从进一步
-  //    解释——那台产物里没有探针与诊断面板（ADR-0002），不是可以再问一遍的仪器。
+  // ⑥ 投递调用成功，但平台零反馈：不得给出"成功"结论。来自正式产物的记录尤其无从进一步
+  //    解释——那台产物里没有任何测试能力（测试面板与探针已移出主插件，见 ADR-0003），
+  //    不是可以再问一遍的仪器。
   const unconfirmed = delivered.find((d) => platformEventNames(d.payload?.key).length === 0);
   if (unconfirmed !== undefined) {
     const key = unconfirmed.payload?.key;
     const instrument = builds.includes("production") && !builds.includes("debug")
-      ? "（该记录来自正式构建：产物被压缩且不含调试能力，无法再用探针追问这次未确认）"
+      ? "（该记录来自正式构建：它不含任何测试能力，无法再用探针追问这次未确认）"
       : "";
     report.push("");
     return verdict(

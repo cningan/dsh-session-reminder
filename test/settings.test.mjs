@@ -1,21 +1,19 @@
 /**
  * 设置区直测（`lib/client/settings.mjs`）：不模拟浏览器，只注入替身——
- * 假 React 三件套（`h`/`useState`/`useEffect`）、假 `model`、假 locale、可选的真 debugTools
- * 配假连接口。
+ * 假 React 三件套（`h`/`useState`/`useEffect`）、假 `model`、假 locale。
  *
  * 断言四件事：
- *   1. **正式构建口径**（`debugTools` 为空）：设置区只留两个空位，元素树里没有任何
- *      诊断块/工具行/探针文案——调试 UI 不是「隐藏」，而是根本没渲染；
- *   2. **调试构建口径**（注入 debugTools）：诊断块与探针按钮都在，点击探针经注入的
- *      连接口投递（探针可达）；
- *   3. 设置行状态机：自检按钮按结果给出提示、请求权限按钮的忙碌态复位、权限分支的控件；
- *   4. locale 绑定接线与样式表装载（字典来自 `core/text`，CSS 按标记安装/卸载）。
+ *   1. **设置区只有正常使用者那一行**：说明文字 + 权限/渠道状态 + 「发送测试提醒」；
+ *      诊断块、探针按钮与测试模式开关都已随测试能力移出主插件（ADR-0003），元素树里
+ *      既没有它们的类名，也没有它们的文案；
+ *   2. 设置行状态机：自检按钮按结果给出提示、请求权限按钮的忙碌态复位、权限分支的控件；
+ *   3. locale 绑定接线与样式表装载（字典来自 `core/text`，CSS 按标记安装/卸载）；
+ *   4. 样式表里没有任何调试 UI 的类（它们属于 `dev/` 调试插件自己的样式）。
  */
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import { dictionaries } from "../lib/core/text.mjs";
-import { createDebugTools } from "../lib/client/debug-tools.mjs";
 import {
   LOCALE_NAMESPACE,
   SETTINGS_CSS,
@@ -53,8 +51,9 @@ function createReactDouble() {
 function createModel(overrides = {}) {
   const snapshot = {
     notificationPermission: "granted",
-    diagnostics: {},
-    testMode: false,
+    diagnostics: { status: null, edge: null, deliver: null },
+    foregroundOverride: "auto",
+    page: { visibility: "visible", focused: true, background: false },
     ...overrides.snapshot
   };
   const calls = { subscribe: 0, test: 0, permission: 0 };
@@ -78,7 +77,7 @@ function createModel(overrides = {}) {
   return model;
 }
 
-/** 造一个可渲染的设置区：返回 render(props 覆盖) 与假 React（状态跨重渲染保留）。 */
+/** 造一个可渲染的设置区：返回 render(props) 与假 React（状态跨重渲染保留）。 */
 function createRow() {
   const react = createReactDouble();
   const Row = createSettingsRow({ h: react.h, useEffect: react.useEffect, useState: react.useState });
@@ -122,95 +121,63 @@ function buttonsOf(node, out = []) {
   return out;
 }
 
-test("正式构建口径：debugTools 为空时设置区不渲染任何调试 UI（只留两个空位）", () => {
+test("设置区只有正常使用者那一行：说明 + 状态/自检，没有调试 UI 的痕迹", () => {
   const { render } = createRow();
-  const tree = render({ model: createModel(), t, debugTools: null });
+  const tree = render({ model: createModel(), t });
 
   assert.equal(tree.props.className, "dshss-settings");
-  const [row, diagnostics, tools] = tree.props.children;
+  // 只有一个子节点：那一行（说明 + 状态/自检），没有诊断块与工具行的位置。
+  assert.equal(tree.props.children.length, 1);
+  const [row] = tree.props.children;
   assert.equal(row.props.className, "dshss-settings-row");
-  assert.equal(diagnostics, null);
-  assert.equal(tools, null);
+  const [copy, control] = row.props.children;
+  assert.equal(copy.props.className, "dshss-settings-copy");
+  assert.ok(control !== null && control !== undefined);
 
   const classes = classesOf(tree);
-  assert.ok(!classes.includes("dshss-settings-diagnostics"));
-  assert.ok(!classes.includes("dshss-settings-tools"));
+  for (const gone of ["dshss-settings-diagnostics", "dshss-settings-tools"]) {
+    assert.ok(!classes.includes(gone), `调试 UI 的类 ${gone} 不该出现`);
+  }
   const text = textOf(tree).join(" | ");
   assert.doesNotMatch(text, /诊断|探针|测试模式/);
   // 常规内容（描述 + 自检）照旧在。
   assert.match(text, /t:notificationsDescription/);
   assert.match(text, /t:testNotification/);
-
-  // `undefined` 与 `null` 同口径（slot 注册少给一个键也不能崩或漏调试 UI）。
-  const withoutKey = render({ model: createModel(), t });
-  assert.equal(withoutKey.props.children[1], null);
-  assert.equal(withoutKey.props.children[2], null);
-});
-
-test("调试构建口径：注入 debugTools 时诊断块与探针按钮都在，点击探针经连接口投递", () => {
-  const delivered = [];
-  const link = { testMode: false, deliverAdHoc: (notice) => delivered.push(notice), notify() {} };
-  const debugTools = createDebugTools({ link, t, h: (type, props, ...children) => ({ type, props: { ...props, children } }), setTimeout: () => 0 });
-  const { render } = createRow();
-  const tree = render({ model: createModel(), t, debugTools });
-
-  const classes = classesOf(tree);
-  assert.ok(classes.includes("dshss-settings-diagnostics"));
-  assert.ok(classes.includes("dshss-settings-tools"));
-
-  const labels = buttonsOf(tree).map((button) => labelOf(button));
-  // 自检 + 测试模式开关 + 两个探针 + 连发探针
-  assert.deepEqual(labels, [
-    "t:testNotification",
-    "t:testMode",
-    "t:probeNotification",
-    "t:probeInterrupted",
-    "t:probeBurst"
-  ]);
-
-  const buttons = buttonsOf(tree);
-  buttons[2].props.onClick();
-  assert.deepEqual(delivered, [{
-    keyPrefix: "test-probe",
-    kind: "test",
-    title: "t:testNotificationTitle",
-    message: "t:testNotificationMessage"
-  }]);
-
-  // 探针点击把设置行的提示状态改成「探针已投递」，重渲染后按钮文案跟着变。
-  const afterProbe = render({ model: createModel(), t, debugTools });
-  assert.equal(labelOf(buttonsOf(afterProbe)[2]), "t:probeFired");
+  // 这一行就这几件：说明文字 + 渠道状态 + 自检按钮（顺序即渲染顺序）。
+  assert.deepEqual(textOf(tree), ["t:notificationsDescription", "t:enabledNotifications", "t:testNotification"]);
+  assert.deepEqual(buttonsOf(tree).map((button) => labelOf(button)), ["t:testNotification"]);
 });
 
 test("设置行状态机：自检按钮按投递结果给提示，请求权限按钮的忙碌态会复位", async () => {
   const { render } = createRow();
   const model = createModel();
-  let tree = render({ model, t, debugTools: null });
+  let tree = render({ model, t });
 
-  buttonsOf(tree)[0].props.onClick();
+  const testButton = buttonsOf(tree).at(-1);
+  testButton.props.onClick();
   assert.equal(model.calls.test, 1);
-  tree = render({ model, t, debugTools: null });
-  assert.equal(labelOf(buttonsOf(tree)[0]), "t:testNotificationSent");
+  tree = render({ model, t });
+  assert.equal(labelOf(buttonsOf(tree).at(-1)), "t:testNotificationSent");
 
   const failing = createModel({ testDelivered: false });
   const second = createRow();
-  let failingTree = second.render({ model: failing, t, debugTools: null });
+  let failingTree = second.render({ model: failing, t });
   buttonsOf(failingTree)[0].props.onClick();
-  failingTree = second.render({ model: failing, t, debugTools: null });
+  failingTree = second.render({ model: failing, t });
   assert.equal(labelOf(buttonsOf(failingTree)[0]), "t:testNotificationFailed");
 
   // 权限还没给：唯一的控件是「启用提醒」，点击期间 disabled，结束后复位。
   const pending = createModel({ snapshot: { notificationPermission: "default" } });
   const third = createRow();
-  let pendingTree = third.render({ model: pending, t, debugTools: null });
+  let pendingTree = third.render({ model: pending, t });
   const enable = buttonsOf(pendingTree)[0];
   assert.equal(labelOf(enable), "t:enableNotifications");
   assert.equal(enable.props.disabled, false);
   enable.props.onClick();
-  pendingTree = third.render({ model: pending, t, debugTools: null });
+  pendingTree = third.render({ model: pending, t });
   assert.equal(buttonsOf(pendingTree)[0].props.disabled, true);
   await new Promise((resolve) => setImmediate(resolve));
-  pendingTree = third.render({ model: pending, t, debugTools: null });
+  pendingTree = third.render({ model: pending, t });
   assert.equal(pending.calls.permission, 1);
   assert.equal(buttonsOf(pendingTree)[0].props.disabled, false);
 });
@@ -224,8 +191,15 @@ test("权限分支：每个通知能力状态都有自己的控件与文案", ()
   ];
   for (const [permission, expected] of cases) {
     const { render } = createRow();
-    const tree = render({ model: createModel({ snapshot: { notificationPermission: permission } }), t, debugTools: null });
+    const tree = render({ model: createModel({ snapshot: { notificationPermission: permission } }), t });
     assert.ok(textOf(tree).includes(expected), `${permission} 应显示 ${expected}`);
+  }
+  // native 与 granted 才有「发送测试提醒」；其余状态不给按钮。
+  for (const [permission, hasTest] of [["native", true], ["granted", true], ["default", false], ["denied", false], ["unsupported", false]]) {
+    const { render } = createRow();
+    const labels = buttonsOf(render({ model: createModel({ snapshot: { notificationPermission: permission } }), t }))
+      .map((button) => labelOf(button));
+    assert.equal(labels.includes("t:testNotification"), hasTest, `${permission} 的测试按钮存在性`);
   }
 });
 
@@ -264,7 +238,7 @@ test("locale 绑定接线：字典注册给官方 locale 服务，返回的 t �
   assert.equal(bound("notifications"), "Session reminders");
 });
 
-test("样式表按标记安装、替换旧的、卸载时移除，且 CSS 里含设置区与诊断块的类", () => {
+test("样式表按标记安装、替换旧的、卸载时移除；CSS 里没有调试 UI 的类", () => {
   const created = [];
   const head = {
     children: [],
@@ -310,8 +284,12 @@ test("样式表按标记安装、替换旧的、卸载时移除，且 CSS 里含
     assert.equal(created[0].dataset.pluginCss, SETTINGS_STYLE_TAG);
     assert.equal(created[0].textContent, SETTINGS_CSS);
     assert.equal(head.children.length, 1);
-    for (const className of [".dshss-settings", ".dshss-settings-diagnostics", ".dshss-settings-tools", ".dshss-settings-button"]) {
+    for (const className of [".dshss-settings", ".dshss-settings-row", ".dshss-settings-description", ".dshss-settings-status", ".dshss-settings-button"]) {
       assert.ok(SETTINGS_CSS.includes(className), `CSS 应包含 ${className}`);
+    }
+    // 调试 UI 的样式随调试能力一起移出：它们属于 dev/ 调试插件。
+    for (const gone of [".dshss-settings-diagnostics", ".dshss-settings-tools"]) {
+      assert.ok(!SETTINGS_CSS.includes(gone), `CSS 不该包含 ${gone}`);
     }
     dispose();
     assert.equal(head.children.length, 0);
