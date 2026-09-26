@@ -38,7 +38,7 @@ Shell 桥的实现属于外部集成边界，不包含在本仓库中。
 
 ## 诊断
 
-Client 半边把它观察到的事实（装载快照、会话/状态数据源形状、运行边沿、前台判定、投递结果，以及平台自己的通知生命周期事件）上报给 Host 半边，后者追加写入 `<profile>/.dsh-session-status/diagnostics.jsonl`；Host 加载时还会先写一条 `host-ready`，用来区分"Host 没跑起来"与"Client 没上报"。运行 `npm run diagnose`（或 `node scripts/check-diagnostics.mjs <文件>`）读取该文件并给出结论与退出码。**结论词与退出码语义的唯一定义是 `scripts/check-diagnostics.mjs` 头部文档中的 `VERDICTS` 表**，本文档刻意不复述它们。读方区分「投递调用成功」（`delivered: true`，即 `new Notification()` 没抛错）与「平台确认显示」（同一 key 的 `onshow` 或 `onclose`）：只有后者才是 [ADR-0001](docs/adr/0001-no-require-interaction-short-unique-tags.md) 所依赖的证据。调用成功但该 key 没有任何平台事件时给出"未确认"结论、绝不报告成功；出现 `onerror` 时给出平台拒绝结论并附上 error 文本。这样一次运行可以事后审计，而不必盯着窗口等它结束。
+Client 半边把它观察到的事实（装载快照、会话/状态数据源形状、运行边沿、前台判定、投递结果，以及平台自己的通知生命周期事件）上报给 Host 半边，后者追加写入 `<profile>/.dsh-session-status/diagnostics.jsonl`；Host 加载时还会先写一条 `host-ready`，用来区分"Host 没跑起来"与"Client 没上报"。事件词表、每种事件的载荷最小形状与记录 envelope 有**唯一 owner**（Client 发送方、Host 与读方消费同一份）；Host 是**闸门**——落盘前校验，形状不符的记录不再静默写入：请求得到 400（带回累计拒绝条数），同一份 JSONL 里留下一条 `diagnostics-rejected` 事实。每条 Client 记录还标明产生它的构建（`build`）：正式产物被压缩且不含调试能力，与调试构建不是同一台观测仪器，Host 自己写的行标 `host`。契约只向前加字段——既有字段与取值逐字节不变，未知字段与缺席的 `build`（旧 Client）都被容忍，因此 Host 与 Client 可以各自独立升级。读方因此容忍未知字段，并且**只解释它认识的事件**（Host 行或没见过的名字只出现在事件直方图里）。运行 `npm run diagnose`（或 `node scripts/check-diagnostics.mjs <文件>`）读取该文件并给出结论与退出码。**结论词与退出码语义的唯一定义是 `scripts/check-diagnostics.mjs` 头部文档中的 `VERDICTS` 表**，本文档刻意不复述它们。读方区分「投递调用成功」（`delivered: true`，即 `new Notification()` 没抛错）与「平台确认显示」（同一 key 的 `onshow` 或 `onclose`）：只有后者才是 [ADR-0001](docs/adr/0001-no-require-interaction-short-unique-tags.md) 所依赖的证据。调用成功但该 key 没有任何平台事件时给出"未确认"结论、绝不报告成功；出现 `onerror` 时给出平台拒绝结论并附上 error 文本。这样一次运行可以事后审计，而不必盯着窗口等它结束。
 
 ## 兼容性
 
@@ -52,12 +52,12 @@ Client 半边把它观察到的事实（装载快照、会话/状态数据源形
 - `npm run build:client:debug` —— 调试构建：保留诊断面板与**注入的调试工具**（`sendProbe`/`sendProbeBurst`/`sendDelayedProbe`/`setTestMode`），供本地排查
 - `npm test` —— `pretest` 先构建调试版，测试针对调试产物运行
 - `npm run check:production` —— 构建正式版并断言产物不含调试能力
-- `npm run diagnose` —— 读 `<profile>/.dsh-session-status/diagnostics.jsonl`，给出结论与退出码
+- `npm run diagnose` —— 读 `<profile>/.dsh-session-status/diagnostics.jsonl`，给出结论与退出码；它与发送方、Host 闸门消费同一份诊断契约，并且只解释它认识的事件
 - `prepack` 走正式构建，因此从 tarball 安装永远不会带上调试代码
 
 ## 构建与测试状态
 
-运行 `npm test` 可执行内置 Node 测试，覆盖会话边沿、terminal reason、渠道识别、前台抑制、连接断开误报、插件设置区注册、locale 字典语言跟随、归一化层（标题三段回退、错误详情抽取、列表/状态形状，以及前台判定的四种情形：隐藏 / 失焦 / 可见且聚焦 / 没有宿主页面，外加「只有归一化 module 可以读页面可见性/焦点」的单一来源防线）、投递层的渠道回退与平台事件回灌（只注入最小替身，不模拟整个浏览器），设置区与调试工具（没有注入方时不渲染调试 UI、注入后探针可达、诊断行的页面事实只渲染注入值），**model 表面一致性**（正式与调试 bundle 的 `Object.keys(model)` 完全相同且不含调试键），以及诊断读方的结论（固定样本 JSONL：平台确认显示 / 平台拒绝 / 未确认三种投递）。判定族断言都在这些 Node 直测里；整套浏览器模拟（`vm`）只保留 5 条装配级集成测试（订阅 → 判定 → 文案 → 投递 → 上报），只断言走完整装配路径才能观察的事实。当前 Client 文件本身就是 DSH loader bundle；这些测试不能代替 DSH 集成和真实通知验证。
+运行 `npm test` 可执行内置 Node 测试，覆盖会话边沿、terminal reason、渠道识别、前台抑制、连接断开误报、插件设置区注册、locale 字典语言跟随、归一化层（标题三段回退、错误详情抽取、列表/状态形状，以及前台判定的四种情形：隐藏 / 失焦 / 可见且聚焦 / 没有宿主页面，外加「只有归一化 module 可以读页面可见性/焦点」的单一来源防线）、投递层的渠道回退与平台事件回灌（只注入最小替身，不模拟整个浏览器），设置区与调试工具（没有注入方时不渲染调试 UI、注入后探针可达、诊断行的页面事实只渲染注入值），**model 表面一致性**（正式与调试 bundle 的 `Object.keys(model)` 完全相同且不含调试键），诊断读方的结论（固定样本 JSONL：平台确认显示 / 平台拒绝 / 未确认三种投递），以及**诊断契约**（词表、落盘前缀规则、形状表自身良构、合法记录的定点变异逐条被拒、未知字段的前向兼容、envelope 字段顺序、读方只解释它认识的事件、诚实的构建标注，以及真实产物上报的每条记录都通过同一份校验）。判定族断言都在这些 Node 直测里；整套浏览器模拟（`vm`）只保留 5 条装配级集成测试（订阅 → 判定 → 文案 → 投递 → 上报），只断言走完整装配路径才能观察的事实。当前 Client 文件本身就是 DSH loader bundle；这些测试不能代替 DSH 集成和真实通知验证。
 
 ## 已知限制
 

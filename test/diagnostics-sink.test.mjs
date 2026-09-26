@@ -1,9 +1,11 @@
 /**
  * 诊断上报 sink 直测（`lib/client/diagnostics-sink.mjs`）：不模拟浏览器，只注入假 fetch
  * 与假时钟。断言四件事：
- *   1. 事件名常量表是六类事件的单一来源；
+ *   1. 事件名常量表是六类事件的单一来源（词表本身定义在 `lib/diagnostics-contract.mjs`，
+ *      这里断言的是 sink 转出的那一份）；
  *   2. 六类事件的**落盘形状**（逐字节，含字段顺序）与读方 `scripts/check-diagnostics.mjs`
- *      解析的 `{"at","event","payload"}` 一致；
+ *      解析的 `{"at","event","payload","build"}` 一致（`build` 是唯一的新增字段，
+ *      标明产生它的构建；不在构建产物里跑时按正式构建算）；
  *   3. `fetch` 缺失、抛错、返回非 Promise 或拒绝时**绝不抛**（上报失败不影响提醒行为）；
  *   4. 边沿记录通道：判定核心的只读边沿事实（`decider.edges`）→ 与既有 JSONL 同形的记录，
  *      包括「观察到停止边沿但没有提醒」（抑制/静默/显式移除）那一类——读方的 FAIL 文案
@@ -13,6 +15,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { DIAGNOSTIC_EVENTS, createDiagnosticsSink, diagnosticsEndpoint } from "../lib/client/diagnostics-sink.mjs";
+import { CLIENT_BUILDS } from "../lib/diagnostics-contract.mjs";
 import { createDecider } from "../lib/core/decide.mjs";
 import { analyze, parseRecords } from "../scripts/check-diagnostics.mjs";
 
@@ -21,6 +24,8 @@ const ENDPOINT = "/plugins/dsh-session-status/diagnostics";
 const AT = "2026-09-26T10:20:30.000Z";
 const NOW = () => new Date(AT);
 const CLIENT_PREFIX = "client:";
+/** 不在构建产物里跑（Node 直测）时 sink 报的构建：正式产物。 */
+const BUILD = CLIENT_BUILDS.PRODUCTION;
 
 /** 假 fetch + 假时钟的 sink：收下每次调用的路径与请求体（逐字节比较用）。 */
 function recorder() {
@@ -101,10 +106,31 @@ test("posts each of the six events in the wire shape the reader parses", () => {
     assert.equal(post.options.method, "POST");
     assert.equal(post.options.headers["content-type"], "application/json");
     assert.equal(post.options.keepalive, true);
-    // 逐字节：字段名、字段顺序与取值都必须与既有 JSONL 一致。
-    assert.equal(post.options.body, `{"at":"${AT}","event":"${event}","payload":${JSON.stringify(payload)}}`);
-    assert.deepEqual(JSON.parse(post.options.body), { at: AT, event, payload });
+    // 逐字节：字段名、字段顺序与取值都必须与既有 JSONL 一致；`build` 是唯一新增的字段，
+    // 且在 envelope 末尾（新增字段不改变既有字段的字节）。
+    assert.equal(post.options.body,
+      `{"at":"${AT}","event":"${event}","payload":${JSON.stringify(payload)},"build":"${BUILD}"}`);
+    assert.deepEqual(JSON.parse(post.options.body), { at: AT, event, payload, build: BUILD });
   }
+});
+
+test("stamps which instrument produced the record, and lets a caller override it", () => {
+  // 不在构建产物里跑（Node 直测）：没有 __DEBUG__，按正式构建算——这是诚实的默认。
+  const { posts, sink } = recorder();
+  sink.report(DIAGNOSTIC_EVENTS.ATTACH, {});
+  assert.equal(JSON.parse(posts[0].options.body).build, CLIENT_BUILDS.PRODUCTION);
+
+  // 显式注入时以注入值为准（构建产物里由 __DEBUG__ 决定，见 test/model-surface.test.mjs）。
+  const injected = [];
+  const debugSink = createDiagnosticsSink({
+    fetch: (path, options) => { injected.push(JSON.parse(options.body)); return Promise.resolve(); },
+    now: NOW,
+    build: CLIENT_BUILDS.DEBUG
+  });
+  debugSink.report(DIAGNOSTIC_EVENTS.ATTACH, {});
+  assert.equal(injected[0].build, CLIENT_BUILDS.DEBUG);
+  // 字段顺序：at → event → payload → build（envelope 的规范顺序，由契约 module 造）。
+  assert.deepEqual(Object.keys(injected[0]), ["at", "event", "payload", "build"]);
 });
 
 test("falls back to the global fetch lazily when none is injected", () => {
@@ -221,10 +247,10 @@ test("turns the decider's read-only edge facts into records, including observed-
     { sessionId: "b", kind: "terminal", suppressed: "missing-list-row", isCurrent: false }
   ]);
   assert.equal(bodies(posts).length, 3);
-  // 落盘记录里没有边的「事实」字段（noticeIndex 等）：线格式仍与历史一致。
-  assert.equal(bodies(posts)[0], `{"at":"${AT}","event":"edge","payload":{"sessionId":"a","kind":"terminal","suppressed":null,"isCurrent":true,"hasTurnEndReason":true}}`);
-  assert.equal(bodies(posts)[1], `{"at":"${AT}","event":"edge","payload":{"sessionId":"c","kind":"pending","interactionKind":"approval"}}`);
-  assert.equal(bodies(posts)[2], `{"at":"${AT}","event":"edge","payload":{"sessionId":"b","kind":"terminal","suppressed":"missing-list-row","isCurrent":false}}`);
+  // 落盘记录里没有边的「事实」字段（noticeIndex 等）：线格式仍与历史一致（外加 build）。
+  assert.equal(bodies(posts)[0], `{"at":"${AT}","event":"edge","payload":{"sessionId":"a","kind":"terminal","suppressed":null,"isCurrent":true,"hasTurnEndReason":true},"build":"${BUILD}"}`);
+  assert.equal(bodies(posts)[1], `{"at":"${AT}","event":"edge","payload":{"sessionId":"c","kind":"pending","interactionKind":"approval"},"build":"${BUILD}"}`);
+  assert.equal(bodies(posts)[2], `{"at":"${AT}","event":"edge","payload":{"sessionId":"b","kind":"terminal","suppressed":"missing-list-row","isCurrent":false},"build":"${BUILD}"}`);
 });
 
 test("the suppression channel is what feeds the reader's suppressed-edge verdict", () => {

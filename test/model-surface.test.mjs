@@ -18,6 +18,8 @@ import vm from "node:vm";
 
 import { build } from "esbuild";
 
+import { CLIENT_BUILDS, validateRecord } from "../lib/diagnostics-contract.mjs";
+
 const ENTRY = fileURLToPath(new URL("../lib/client/entry.mjs", import.meta.url));
 
 /** model 的公开面：两种构建都必须一字不差。 */
@@ -263,4 +265,31 @@ test("前台否决：正式构建恒按前台规则抑制，调试构建里注�
   stop(debug);
   assert.equal(debug.notices.length, 1);
   assert.equal(payloads(debug, "deliver").at(-1).delivered, true);
+});
+
+test("真实产物的每条上报都满足诊断契约，且自带产生它的构建", () => {
+  const production = launch(productionBundle);
+  const debug = launch(debugBundle);
+  const recordsOf = (launchResult) => launchResult.reports.map((report) => JSON.parse(report.body));
+
+  const productionRecords = recordsOf(production);
+  const debugRecords = recordsOf(debug);
+  assert.ok(productionRecords.length > 0, "装载快照与状态摘要应各落一条");
+
+  // 发送方与校验方就同一份契约达成一致：真实产物造出的记录一条都不该被 Host 的闸门拒掉。
+  for (const [label, records, expected] of [
+    ["正式", productionRecords, CLIENT_BUILDS.PRODUCTION],
+    ["调试", debugRecords, CLIENT_BUILDS.DEBUG]
+  ]) {
+    for (const record of records) {
+      const verdict = validateRecord(record);
+      assert.equal(verdict.ok, true, `${label}构建的 ${record.event} 记录应满足契约：${verdict.reason ?? ""}`);
+      assert.equal(record.build, expected, `${label}构建的记录应标注自己是哪台仪器`);
+    }
+  }
+
+  // 两种构建的观测流除 `at`（时刻）与 `build`（仪器）外逐字节同形：调试能力是注入的，
+  // 不往观测流里加东西（SPEC「调试构建下的诊断记录逐字节不变」）。
+  const shape = (records) => records.map((record) => JSON.stringify({ ...record, at: null, build: null }));
+  assert.deepEqual(shape(debugRecords), shape(productionRecords));
 });

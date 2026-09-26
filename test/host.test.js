@@ -116,3 +116,88 @@ test("host diagnostics route rejects a wrong method and a missing event", async 
     assert.equal(missingEvent.status, 400);
   });
 });
+
+// —— 以下是诊断契约的闸门（issue #2）：坏记录不再静默落盘，而且拒绝这件事是可观察的。
+
+const STATUS_PAYLOAD = {
+  statusEntries: 1,
+  currentId: "current",
+  currentInStatuses: true,
+  listHandlesCurrent: true,
+  runs: []
+};
+
+test("host refuses a report whose shape is not in the diagnostics contract, and counts it", async () => {
+  await withProfileDirectory(async (dir) => {
+    const diagnostics = diagnosticsFile();
+    const ctx = createHostContext();
+    apply(ctx);
+    const handler = ctx.routes[0].handler;
+
+    // ① 词表外的事件名：以前会被原样落盘，现在被拒。
+    const unknown = createResponse();
+    await handler(requestWith("POST", { at: "2026-01-01T00:00:00.000Z", event: "telemetry", payload: {} }), unknown);
+    assert.equal(unknown.status, 400);
+    assert.equal(JSON.parse(unknown.body).rejected, 1);
+    assert.match(JSON.parse(unknown.body).error, /未知事件 telemetry/);
+
+    // ② 认识的事件、形状不符的载荷（deliver 少了读方依赖的字段）。
+    const badShape = createResponse();
+    await handler(requestWith("POST", {
+      at: "2026-01-01T00:00:00.000Z",
+      event: "deliver",
+      payload: { channel: "browser" }
+    }), badShape);
+    assert.equal(badShape.status, 400);
+    assert.equal(JSON.parse(badShape.body).rejected, 2);
+    assert.match(JSON.parse(badShape.body).error, /缺少 key/);
+
+    // ③ 合法记录照常落盘，并带上产生它的构建（这里显式说是调试构建）。
+    const accepted = createResponse();
+    await handler(requestWith("POST", {
+      at: "2026-01-01T00:00:00.000Z",
+      event: "attach",
+      payload: { hasSessionsList: true },
+      build: "debug"
+    }), accepted);
+    assert.equal(accepted.status, 200);
+    assert.equal(JSON.parse(accepted.body).ok, true);
+
+    const lines = readLines(await readFile(diagnostics, "utf8"));
+    assert.equal(lines[0].event, "host-ready");
+    // Host 自己写的行也标注是谁写的（`host`）：审计时不会把 Host 的事实当成 Client 观测。
+    assert.equal(lines[0].build, "host");
+    const refused = lines.filter((line) => line.event === "diagnostics-rejected");
+    assert.deepEqual(refused.map((line) => [line.payload.event, line.payload.rejected, line.build]),
+      [["telemetry", 1, "host"], ["deliver", 2, "host"]]);
+    assert.match(refused[0].payload.reason, /未知事件/);
+    assert.match(refused[1].payload.reason, /缺少 key/);
+    const stored = lines.at(-1);
+    assert.equal(stored.event, "client:attach");
+    assert.deepEqual(stored.payload, { hasSessionsList: true });
+    assert.equal(stored.build, "debug");
+  });
+});
+
+test("host stays byte-compatible with an older client: no build field when none was reported", async () => {
+  await withProfileDirectory(async () => {
+    const diagnostics = diagnosticsFile();
+    const ctx = createHostContext();
+    apply(ctx);
+
+    const response = createResponse();
+    await ctx.routes[0].handler(requestWith("POST", {
+      at: "2026-01-01T00:00:00.000Z",
+      event: "status",
+      payload: STATUS_PAYLOAD
+    }), response);
+    assert.equal(response.status, 200);
+
+    const lines = readLines(await readFile(diagnostics, "utf8"));
+    const stored = lines.at(-1);
+    // 既有 envelope 的字段与取值逐字节不变：没标注构建就不写这个字段（契约只向前加字段）。
+    assert.deepEqual(Object.keys(stored), ["at", "event", "payload"]);
+    assert.equal(stored.event, "client:status");
+    assert.deepEqual(stored.payload, STATUS_PAYLOAD);
+  });
+});
