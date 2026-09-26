@@ -489,3 +489,12 @@ test("the delayed probe only delivers while the page is in the background", () =
   const foregroundDelivery = foreground.reports.filter((entry) => entry.body.event === "deliver").at(-1);
   assert.equal(foregroundDelivery.body.payload.channel, "suppressed-foreground");
 });
+
+test("the interrupted probe mirrors the automatic reminder parameters", () => {
+  const harness = createHarness({ currentId: "current", focused: false });
+  harness.model.sendDelayedProbe(10000, "interrupted");
+
+  assert.equal(harness.notices.length, 1);
+  assert.equal(harness.notices[0].title, "Session interrupted or stopped");
+  assert.equal(harness.notices[0].options.requireInteraction, true);
+});
