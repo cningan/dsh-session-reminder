@@ -13,7 +13,9 @@
     "diagnose": "node scripts/check-diagnostics.mjs"
   },
   "files": [
-    "lib",
+    "lib/client.js",
+    "lib/index.js",
+    "lib/diagnostics-contract.mjs",
     "cordis.patch.yml",
     "docs",
     "README.md",
