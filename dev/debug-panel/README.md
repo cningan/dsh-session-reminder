@@ -20,9 +20,11 @@
 
 ## 为什么不在发布包里
 
-主包 `package.json` 的 `files` 是白名单（`lib` / `cordis.patch.yml` / `docs` / `README*` /
-`SPEC.md` / `CONTEXT.md`，外加显式的 `"!dev"`），`dev/` 不在其中。自证方式：在主仓库根执行
-`npm pack`，检查 tarball 里没有 `dev/` 条目——
+主包 `package.json` 的 `files` 是**运行时文件的显式白名单**（`lib/client.js` /
+`lib/index.js` / `lib/diagnostics-contract.mjs` / `cordis.patch.yml` / `docs` / `README*` /
+`SPEC.md` / `CONTEXT.md`，外加显式的 `"!dev"`），`dev/` 不在其中——源码目录（`lib/client/`、
+`lib/core/`、`scripts/`）同样不在，所以发布包里既没有主插件的构建期源码，也没有本面板。
+自证方式：在主仓库根执行 `npm pack`，检查 tarball 里没有 `dev/` 条目——
 
 ```powershell
 npm pack                     # 主仓库根；prepack 会先构建主插件产物
