@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-当前行为、不变量与代码地图见：[SPEC.md](SPEC.md)。
+当前行为、不变量与规格见：[SPEC.md](SPEC.md)。
 
 ## 功能
 

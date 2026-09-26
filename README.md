@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Canonical behavior, invariants, and code map: [SPEC.md](SPEC.md).
+Canonical behavior, invariants, and spec: [SPEC.md](SPEC.md).
 
 ## What it does
 

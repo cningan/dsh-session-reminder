@@ -30,8 +30,8 @@
 
 ## 仓库源码快照验证（历史记录；日期未记录）
 
-此前的代码地图记录：仓库初始化期间对 `lib/index.js` 与 `lib/client.js` 运行过 Node JavaScript 语法检查。它还记录了未执行 `plugin_check`、Profile 重启或真实通知端到端测试。这是历史建仓报告，不是对当前检出内容的验证。
+此前的建仓记录：仓库初始化期间对 `lib/index.js` 与 `lib/client.js` 运行过 Node JavaScript 语法检查。它还记录了未执行 `plugin_check`、Profile 重启或真实通知端到端测试。这是历史建仓报告，不是对当前检出内容的验证。
 
 ## 历史停止详情回退说明（已被取代）
 
-较早的一条代码地图说明称：当前会话详情对象缺失可能使停止状态边沿报告占位的 interruption 原因。当时检查的源码在其状态边沿回退中提供 `{ running: false }`，并把缺失错误详情当作正常完成。该行为此后已被取代：当前源码使用 Host 的 `SessionEventWindow` 字段暂从选中 binding 读取 `turn/end`，否则使用显式错误详情或通用未知停止提醒。`completionUnread` 既不触发注意提醒，也不把停止归类为成功。Client binding 的确切窗口形状仍未验证。当前源码级契约见 [SPEC.md](../SPEC.md)。
+较早的一条说明称：当前会话详情对象缺失可能使停止状态边沿报告占位的 interruption 原因。当时检查的源码在其状态边沿回退中提供 `{ running: false }`，并把缺失错误详情当作正常完成。该行为此后已被取代：当前源码使用 Host 的 `SessionEventWindow` 字段暂从选中 binding 读取 `turn/end`，否则使用显式错误详情或通用未知停止提醒。`completionUnread` 既不触发注意提醒，也不把停止归类为成功。Client binding 的确切窗口形状仍未验证。当前源码级契约见 [SPEC.md](../SPEC.md)。
