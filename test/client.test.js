@@ -141,6 +141,8 @@ function createHarness({ statuses = new Map(), currentId, detailBySession = {}, 
     navigator: { language: "en" },
     Notification: MockNotification,
     Map,
+    setTimeout: (fn) => { try { fn(); } catch {} return 0; },
+    clearTimeout: () => {},
     fetch: (path, options) => {
       try {
         reports.push({ path, body: JSON.parse(options?.body ?? "{}") });
@@ -470,4 +472,20 @@ test("reports a foreground suppression instead of silently dropping the stop edg
   assert.equal(deliveries[0].body.payload.channel, "suppressed-foreground");
   assert.equal(deliveries[0].body.payload.delivered, false);
   assert.equal(deliveries[0].body.payload.background, false);
+});
+
+test("the delayed probe only delivers while the page is in the background", () => {
+  const background = createHarness({ currentId: "current", focused: false });
+  background.model.sendDelayedProbe();
+  assert.equal(background.notices.length, 1);
+  assert.equal(background.notices[0].title, "DSH reminder test");
+  const backgroundDelivery = background.reports.filter((entry) => entry.body.event === "deliver").at(-1);
+  assert.equal(backgroundDelivery.body.payload.channel, "browser");
+  assert.equal(backgroundDelivery.body.payload.delivered, true);
+
+  const foreground = createHarness({ currentId: "current", focused: true });
+  foreground.model.sendDelayedProbe();
+  assert.equal(foreground.notices.length, 0);
+  const foregroundDelivery = foreground.reports.filter((entry) => entry.body.event === "deliver").at(-1);
+  assert.equal(foregroundDelivery.body.payload.channel, "suppressed-foreground");
 });
