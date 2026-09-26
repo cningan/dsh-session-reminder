@@ -1,0 +1,4 @@
+- insert:
+    - id: session-status-debug
+      name: '@cningan/dsh-session-status-debug'
+      config: {}

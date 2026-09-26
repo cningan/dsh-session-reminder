@@ -68,6 +68,7 @@ DSH Web 用户会同时跑多个会话：当窗口失焦或隐藏时，一个会
 - 会话状态持久化、整个会话对象的序列化、持久设置与 localStorage 会话副本。
 - 通知声音、权限与操作系统呈现的控制（由浏览器/WebView、操作系统及外部 workbench 集成决定）。
 - workbench shell 实现（外部集成边界，不含在本仓库）。
+- **调试面板本身**：它属于仓库内 `dev/debug-panel/` 的**独立开发件**（自带 `package.json`、`cordis.patch.yml`、构建脚本与直测），`inject` 测试服务 `sessionStatusTest` 来渲染面板，**不进发布包**——主包 `files` 白名单不含 `dev/`，并有显式 `"!dev"`；它的测试也不并入主包统计（独立命令 `npm --prefix dev/debug-panel test`），发布包的大小与行为都不受它影响。面板是本仓库的开发工具，不是主插件的一部分。与 [ADR-0003](docs/adr/0003-test-capability-lives-outside-the-plugin.md) 呼应。
 
 ## 备注
 
