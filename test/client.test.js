@@ -165,6 +165,9 @@ function createHarness({ statuses = new Map(), currentId, detailBySession = {}, 
     settingsElement,
     reports,
     model: settingsProps.model,
+    // 调试能力不挂在 model 上：它是装配层在调试构建里构造、经 slot 的 inject() 注入设置区的
+    // 独立协作者（见 test/debug-tools.test.mjs 与 test/model-surface.test.mjs）。
+    debugTools: settingsProps.debugTools,
     setRows: (byId) => list.set({ byId }),
     setStatuses: (next) => sessionStatus.set(next),
     setConnection: (next) => connectionState.set(next),
@@ -476,7 +479,7 @@ test("reports a foreground suppression instead of silently dropping the stop edg
 
 test("the delayed probe only delivers while the page is in the background", () => {
   const background = createHarness({ currentId: "current", focused: false });
-  background.model.sendDelayedProbe();
+  background.debugTools.sendDelayedProbe();
   assert.equal(background.notices.length, 1);
   assert.equal(background.notices[0].title, "DSH reminder test");
   const backgroundDelivery = background.reports.filter((entry) => entry.body.event === "deliver").at(-1);
@@ -484,7 +487,7 @@ test("the delayed probe only delivers while the page is in the background", () =
   assert.equal(backgroundDelivery.body.payload.delivered, true);
 
   const foreground = createHarness({ currentId: "current", focused: true });
-  foreground.model.sendDelayedProbe();
+  foreground.debugTools.sendDelayedProbe();
   assert.equal(foreground.notices.length, 0);
   const foregroundDelivery = foreground.reports.filter((entry) => entry.body.event === "deliver").at(-1);
   assert.equal(foregroundDelivery.body.payload.channel, "suppressed-foreground");
@@ -492,7 +495,7 @@ test("the delayed probe only delivers while the page is in the background", () =
 
 test("the interrupted probe mirrors the automatic reminder parameters", () => {
   const harness = createHarness({ currentId: "current", focused: false });
-  harness.model.sendDelayedProbe(10000, "interrupted");
+  harness.debugTools.sendDelayedProbe(10000, "interrupted");
 
   assert.equal(harness.notices.length, 1);
   assert.equal(harness.notices[0].title, "Session interrupted or stopped");
@@ -553,9 +556,9 @@ test("test mode delivers while the page is still foregrounded", () => {
   harness.setStatuses(new Map([["current", { running: false, completionUnread: false }]]));
   assert.equal(harness.notices.length, 0);
 
-  // 打开测试模式后，同样的边沿应当投递
+  // 打开测试模式后，同样的边沿应当投递（开关属于注入的 debugTools，model 只报告它）
   assert.equal(harness.model.getSnapshot().testMode, false);
-  harness.model.setTestMode(true);
+  harness.debugTools.setTestMode(true);
   assert.equal(harness.model.getSnapshot().testMode, true);
   harness.setStatuses(new Map([["current", { running: true, completionUnread: false }]]));
   harness.setStatuses(new Map([["current", { running: false, completionUnread: false }]]));
@@ -569,7 +572,7 @@ test("test mode delivers while the page is still foregrounded", () => {
 
 test("a burst probe delivers every notice with a short unique tag", () => {
   const harness = createHarness({ currentId: "current", focused: false });
-  assert.equal(harness.model.sendProbeBurst("test", 3), 3);
+  assert.equal(harness.debugTools.sendProbeBurst("test", 3), 3);
 
   assert.equal(harness.notices.length, 3);
   const tags = harness.notices.map((notice) => notice.options.tag);

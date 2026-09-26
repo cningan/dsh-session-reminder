@@ -48,8 +48,8 @@ Client 半边把它观察到的事实（装载快照、会话/状态数据源形
 
 `lib/client.js` 是**构建产物**（esbuild 打包，文件头已标注"勿手改"），源码在 `lib/client/`：
 
-- `npm run build:client` —— 正式构建：不含诊断面板、探针与测试模式 API（见 [ADR-0002](docs/adr/0002-debug-capability-only-in-debug-build.md)）
-- `npm run build:client:debug` —— 调试构建：保留诊断面板与 `sendProbe`/`sendProbeBurst`/`setTestMode`，供本地排查
+- `npm run build:client` —— 正式构建：不含诊断面板、探针与测试模式 API（见 [ADR-0002](docs/adr/0002-debug-capability-only-in-debug-build.md)）；它暴露的 model 与调试构建**键完全一致**——调试能力是注入的独立 module，不属于 model
+- `npm run build:client:debug` —— 调试构建：保留诊断面板与**注入的调试工具**（`sendProbe`/`sendProbeBurst`/`sendDelayedProbe`/`setTestMode`），供本地排查
 - `npm test` —— `pretest` 先构建调试版，测试针对调试产物运行
 - `npm run check:production` —— 构建正式版并断言产物不含调试能力
 - `npm run diagnose` —— 读 `<profile>/.dsh-session-status/diagnostics.jsonl`，给出结论与退出码
@@ -57,7 +57,7 @@ Client 半边把它观察到的事实（装载快照、会话/状态数据源形
 
 ## 构建与测试状态
 
-运行 `npm test` 可执行内置 Node 测试，覆盖会话边沿、terminal reason、渠道识别、前台抑制、连接断开误报、插件设置区注册、locale 字典语言跟随、投递层的渠道回退与平台事件回灌（只注入最小替身，不模拟整个浏览器），以及诊断读方的结论（固定样本 JSONL：平台确认显示 / 平台拒绝 / 未确认三种投递）。当前 Client 文件本身就是 DSH loader bundle；这些测试不能代替 DSH 集成和真实通知验证。
+运行 `npm test` 可执行内置 Node 测试，覆盖会话边沿、terminal reason、渠道识别、前台抑制、连接断开误报、插件设置区注册、locale 字典语言跟随、投递层的渠道回退与平台事件回灌（只注入最小替身，不模拟整个浏览器），设置区与调试工具（没有注入方时不渲染调试 UI、注入后探针可达），**model 表面一致性**（正式与调试 bundle 的 `Object.keys(model)` 完全相同且不含调试键），以及诊断读方的结论（固定样本 JSONL：平台确认显示 / 平台拒绝 / 未确认三种投递）。当前 Client 文件本身就是 DSH loader bundle；这些测试不能代替 DSH 集成和真实通知验证。
 
 ## 已知限制
 

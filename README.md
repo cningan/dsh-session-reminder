@@ -48,8 +48,8 @@ This bundle consumes `uiSession.sessionStatus`, `connection.state`, the selected
 
 `lib/client.js` is a **build artifact** (esbuild bundle, header marks it "do not edit") generated from `lib/client/`:
 
-- `npm run build:client` — production bundle: no diagnostics panel, no probes, no test-mode API ([ADR-0002](docs/adr/0002-debug-capability-only-in-debug-build.md))
-- `npm run build:client:debug` — debug bundle: keeps the diagnostics panel and `sendProbe`/`sendProbeBurst`/`setTestMode` for local triage
+- `npm run build:client` — production bundle: no diagnostics panel, no probes, no test-mode API ([ADR-0002](docs/adr/0002-debug-capability-only-in-debug-build.md)); the model it exposes has exactly the same keys as the debug build, because debug capability is an injected module rather than part of the model
+- `npm run build:client:debug` — debug bundle: keeps the diagnostics panel and the injected debug tools (`sendProbe`/`sendProbeBurst`/`sendDelayedProbe`/`setTestMode`) for local triage
 - `npm test` — its `pretest` builds the debug bundle first; the suite then runs against it
 - `npm run check:production` — builds production and asserts the artifact carries no debug capability
 - `npm run diagnose` — reads `<profile>/.dsh-session-status/diagnostics.jsonl` and prints a verdict with an exit code
@@ -57,7 +57,7 @@ This bundle consumes `uiSession.sessionStatus`, `connection.state`, the selected
 
 ## Build and test status
 
-Run `npm test` for the built-in Node test suite covering session edges, terminal reasons, channel detection, foreground rules, connection-loss suppression, the plugin settings-section registration, locale-dictionary language following, the delivery layer's channel fallback and platform-event feedback (minimal doubles only, no whole-browser simulation), and the diagnostics reader's verdicts (fixed-sample JSONL for platform-confirmed, platform-rejected, and unconfirmed deliveries). The checked-in Client file is already the DSH loader bundle; tests do not replace host/plugin integration or real notification testing.
+Run `npm test` for the built-in Node test suite covering session edges, terminal reasons, channel detection, foreground rules, connection-loss suppression, the plugin settings-section registration, locale-dictionary language following, the delivery layer's channel fallback and platform-event feedback (minimal doubles only, no whole-browser simulation), the settings section and its injected debug tools (no debug UI without an injector, probes reachable once injected), the **model surface invariant** (the production and debug bundles expose exactly the same `Object.keys(model)`, with no debug keys), and the diagnostics reader's verdicts (fixed-sample JSONL for platform-confirmed, platform-rejected, and unconfirmed deliveries). The checked-in Client file is already the DSH loader bundle; tests do not replace host/plugin integration or real notification testing.
 
 ## Known limitations
 
