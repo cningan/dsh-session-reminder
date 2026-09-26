@@ -21,7 +21,7 @@ const LIB_ROOT = fileURLToPath(new URL("../lib", import.meta.url));
  * 这个 module 在自己回答「现在有哪些渠道可用」，而那本该只在投递层发生一次。
  *
  * 只匹配真正的读取形态，不匹配散文：`navigator.language`（被否决的语言猜测）、
- * `sendTestNotification()`、`NotificationSettingsRow` 这类标识符都不算读取。
+ * `requestPermission`（权限请求的转发点）这类标识符都不算读取。
  */
 const DERIVATION_READS = /navigator\.userActivation|typeof\s+Notification|\bNotification\s*[.(]|dshShell|chrome/;
 
@@ -47,12 +47,13 @@ test("能力/权限的派生只有一处：宿主对象只由投递层读取", a
     "diagnostics-contract.mjs",
     "client/delivery.mjs",
     "client/assembly.mjs",
-    "client/settings.mjs",
     "client/test-service.mjs",
     "client/normalize.mjs"
   ]) {
     assert.ok(names.includes(expected), `扫描面应包含 ${expected}`);
   }
+  // 设置界面已彻底移除：它曾经是这条防线的第二个消费方，现在不再是扫描面的一部分。
+  assert.equal(names.includes("client/settings.mjs"), false, "设置区源码不应再存在");
 
   const readers = [];
   for (const file of files) {
@@ -64,13 +65,13 @@ test("能力/权限的派生只有一处：宿主对象只由投递层读取", a
     "宿主能力（navigator / Notification / 桥）只允许在 client/delivery 里读取");
 });
 
-test("装配层消费的是派生值：装载快照、投递记录与设置区展示都走同一个派生", async () => {
+test("装配层消费的是派生值：装载快照、投递记录与权限请求都走同一个派生", async () => {
   const assembly = await readFile(join(LIB_ROOT, "client", "assembly.mjs"), "utf8");
 
   // 三处消费点都必须存在（任一处退回自己读宿主对象，上面那条防线或本条会失败）。
   assert.match(assembly, /readCapabilities\(/, "装载快照应取能力派生的值");
   assert.match(assembly, /delivery\.capability\(\)/, "前台静默那一次也应用同一个派生值");
   assert.match(assembly, /result\.capability/, "记录/上报应用本次决策的那个能力值");
-  assert.match(assembly, /delivery\.permission\(\)/, "设置区展示的那一问应走同一个派生");
+  assert.match(assembly, /delivery\.permission\(\)/, "权限请求与模型快照的那一问应走同一个派生");
   assert.doesNotMatch(assembly, DERIVATION_READS, "装配层不得自己读宿主能力");
 });

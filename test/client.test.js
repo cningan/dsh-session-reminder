@@ -4,7 +4,7 @@
  *
  * 判定族（停止/运行边沿、原因分类、去重、抑制、等待优先于停止、tag 唯一性、权限派生）
  * 以及各 module 内部的行为，全部由 Node 直测承担——`test/core-*.test.mjs`、
- * `test/delivery.test.mjs`、`test/diagnostics-sink.test.mjs`、`test/settings.test.mjs`、
+ * `test/delivery.test.mjs`、`test/diagnostics-sink.test.mjs`、
  * `test/test-service.test.mjs`、`test/model-surface.test.mjs`、`test/client-assembly.test.mjs`；
  * 它们不 `import vm`、不模拟浏览器。本文件不再逐条重建假浏览器。
  *
@@ -15,7 +15,7 @@
  *   - 语义 → 通知标题/正文的文案组装（含跟随官方 locale 词典的语言）
  *   - 前台否决的**记账与上报**（按设计静默也要写一条可区分的投递记录）
  *   - 测试服务的临时投递与自动提醒共用同一个投递出口，因此同样服从前台否决
- *   - `settings.section` 的注册元数据（name / id / order / label）
+ *   - **权限请求的非 UI 路径**：设置界面已移除，权限只在「真要投递而权限未决定」时被请求
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -50,10 +50,13 @@ const running = (id) => [id, { running: true, completionUnread: false }];
 const stopped = (id, overrides = {}) => [id, { running: false, completionUnread: false, ...overrides }];
 
 /**
- * 装配替身：官方源（列表 / 状态 / 当前会话 / 连接 / locale / slots / effect / provide）全部注入，
+ * 装配替身：官方源（列表 / 状态 / 当前会话 / 连接 / locale / effect / provide）全部注入，
  * 外加最小假 window / document / Notification / fetch。返回观察点，不返回任何实现细节。
  *
+ * **没有 `slots`**：主插件不含任何设置 UI，装配层不再向它注册任何东西（插件连 React 都不取）。
+ *
  * `bridges: "throwing"` 表示两个原生桥都在场但都会抛错（用来观察渠道回退）。
+ * `browserPermission: "default"` + `permissionResult` 用来观察权限请求的那条路径。
  */
 function createHarness({
   statuses = new Map(),
@@ -63,17 +66,26 @@ function createHarness({
   focused = false,
   localeLanguage = "en",
   bridges = "none",
-  browserPermission = "granted"
+  browserPermission = "granted",
+  permissionResult = "granted"
 } = {}) {
   const notices = [];
   const reports = [];
   const bridgeAttempts = [];
-  const registrations = [];
+  const permissionRequests = [];
   const provided = {};
   const handlers = new Map();
 
   class MockNotification {
     static permission = browserPermission;
+    static async requestPermission() {
+      permissionRequests.push(MockNotification.permission);
+      // 用户的答复在下一次 microtask 之后才到（真实浏览器同款时序）：本轮投递仍会看到
+      // 未决定的 `default`，因此这一条提醒的记录如实写成「无可用渠道」。
+      await null;
+      MockNotification.permission = permissionResult;
+      return permissionResult;
+    }
     constructor(title, options) {
       this.title = title;
       this.options = options;
@@ -92,14 +104,9 @@ function createHarness({
     focus() {},
     __ModuleLoader__: {
       load({ factory }) {
-        const React = {
-          createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
-          useEffect() {},
-          useState: (value) => [value, () => {}]
-        };
+        // 插件不含任何 UI：factory 收到 loadModule 但一次都不该调用它。
         window.plugin = factory((name) => {
-          assert.equal(name, "react");
-          return React;
+          throw new Error(`插件不应向 loader 取模块，却要了 ${name}`);
         });
       }
     }
@@ -123,15 +130,13 @@ function createHarness({
 
   const document = {
     visibilityState: "visible",
-    head: null,
     hasFocus: () => focused,
     addEventListener(name, listener) {
       const group = handlers.get(`document:${name}`) || new Set();
       group.add(listener);
       handlers.set(`document:${name}`, group);
     },
-    removeEventListener(name, listener) { handlers.get(`document:${name}`)?.delete(listener); },
-    querySelector: () => null
+    removeEventListener(name, listener) { handlers.get(`document:${name}`)?.delete(listener); }
   };
 
   const list = observable({ byId: rows });
@@ -165,10 +170,6 @@ function createHarness({
     provide(name, value) {
       provided[name] = value;
       return () => { delete provided[name]; };
-    },
-    slots: {
-      inject(_slot, callback) { callback(); return () => {}; },
-      register(meta, render) { registrations.push({ meta, render }); return () => {}; }
     }
   };
 
@@ -190,14 +191,11 @@ function createHarness({
   }, { filename: "lib/client.js" });
   window.plugin.apply(ctx);
 
-  const registration = registrations[0];
-  const settingsProps = typeof registration.meta.inject === "function" ? registration.meta.inject() : {};
   return {
     notices,
     reports,
     bridgeAttempts,
-    registration,
-    model: settingsProps.model,
+    permissionRequests,
     service: provided.sessionStatusTest,
     setStatuses: (next) => sessionStatus.set(next),
     setRows: (byId) => list.set({ byId }),
@@ -428,18 +426,47 @@ test("渠道回退：两个原生桥都抛错时退回浏览器通知，权限�
   });
 
   // 有原生桥时能力就是 native（不读浏览器权限）。
-  assert.equal(harness.model.getSnapshot().notificationPermission, "native");
+  assert.equal(harness.service.getSnapshot().notificationPermission, "native");
 
-  assert.equal(harness.model.sendTestNotification(), true);
+  assert.equal(harness.service.deliverAdHoc("test"), true);
   // 两个桥都被尝试过（顺序是投递层的契约），最后用浏览器通知投了出去。
   assert.deepEqual(harness.bridgeAttempts.map((attempt) => attempt.channel), ["shell", "webview"]);
   assert.equal(harness.notices.length, 1);
   assert.equal(harness.notices[0].title, "DSH reminder test");
   // 只有走到浏览器那一步才读得到权限：模型的状态跟着投递结果刷新。
-  assert.equal(harness.model.getSnapshot().notificationPermission, "granted");
+  assert.equal(harness.service.getSnapshot().notificationPermission, "granted");
 });
 
-test("语言与注册：通知文案跟随官方 locale 词典，设置区注册为插件配置 section", () => {
+test("权限请求只有一条非 UI 路径：权限未决定时首次投递就地请求一次，且只问一次", async () => {
+  // 设置界面已彻底移除，所以「请求通知权限」不再由任何按钮触发：浏览器权限还是
+  // `default`（用户没答过、也没有可用原生桥）而**真要投递**的那一刻，装配层就地请求一次。
+  const harness = createHarness({
+    browserPermission: "default",
+    permissionResult: "granted",
+    statuses: new Map([running("background")])
+  });
+
+  // 还没到投递：一次都不该问（插件启动、装载快照都不弹权限框）。
+  assert.equal(harness.permissionRequests.length, 0);
+  assert.equal(harness.service.getSnapshot().notificationPermission, "default");
+
+  harness.setStatuses(new Map([stopped("background")]));
+  // 这一条投递本身仍按原样走渠道序列：`default` 下浏览器渠道不可用，记录如实写成无渠道。
+  assert.equal(harness.notices.length, 0);
+  assert.equal(harness.payloads("deliver").at(-1).channel, "browser-default");
+  assert.deepEqual(harness.permissionRequests, ["default"]);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(harness.service.getSnapshot().notificationPermission, "granted");
+
+  // 权限不再是未决定态，闸门关闭：后续投递不再重复请求，且这次真的投了出去。
+  harness.setStatuses(new Map([running("background")]));
+  harness.setStatuses(new Map([stopped("background")]));
+  assert.deepEqual(harness.permissionRequests, ["default"]);
+  assert.equal(harness.notices.length, 1);
+  assert.equal(harness.payloads("deliver").at(-1).channel, "browser");
+});
+
+test("语言：通知文案跟随官方 locale 词典", () => {
   const harness = createHarness({
     currentId: "current",
     localeLanguage: "zh",
@@ -451,10 +478,4 @@ test("语言与注册：通知文案跟随官方 locale 词典，设置区注册
   assert.equal(harness.notices.length, 1);
   assert.equal(harness.notices[0].title, "会话已中断或停止");
   assert.equal(harness.notices[0].options.body, "Background session：会话已停止，但无法确定原因");
-
-  // 设置区是插件配置页的 section（不是常规设置页的一行），标签与通知文案同源（同一个 `t`）。
-  assert.equal(harness.registration.meta.name, "settings.section");
-  assert.equal(harness.registration.meta.id, "@cningan/dsh-session-status");
-  assert.equal(harness.registration.meta.order, 30);
-  assert.equal(harness.registration.meta.label(), "会话提醒");
 });

@@ -6,7 +6,8 @@
  *      `auto`（默认行为因此与没有本服务时一致）；
  *   2. **覆盖只落在 `background` 这一位**：`auto` 原样返回同一个对象（判定不变），另外两态
  *      替换结论、原样带走宿主证据（`visibility` / `focused`）；
- *   3. **服务面就是契约的四个方法**：`dev/` 插件拿到的是这四个键，不是整个设置区协作者；
+ *   3. **服务面就是契约的四个方法**：`dev/` 插件拿到的是这四个键，不是装配层的内部
+ *      协作者（权限请求 `requestPermission` 不在 Hook 面上）；
  *   4. **写路径的归一化**：`setForegroundOverride` 与 `deliverAdHoc` 交到模型手上的都是
  *      归一化之后的取值。
  */
@@ -89,7 +90,7 @@ test("覆盖只落在 background 这一位：auto 原样返回，另外两态只
   assert.equal(withForegroundMode(noDocument, "auto"), noDocument);
 });
 
-test("服务面就是契约的四个方法：设置区协作者不泄漏", () => {
+test("服务面就是契约的四个方法：装配层的内部协作者不泄漏", () => {
   const service = createTestStatusService(createModelDouble());
 
   assert.deepEqual(Object.keys(service), ["setForegroundOverride", "getSnapshot", "subscribe", "deliverAdHoc"]);

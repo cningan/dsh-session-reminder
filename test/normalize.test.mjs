@@ -268,7 +268,7 @@ test("前台判定在 lib/ 下只有一处实现：可见性/焦点只由归一�
   const names = files.map((file) => relative(LIB_ROOT, file).split(sep).join("/"));
 
   // 阳性对照：扫描面确实覆盖了归一化 module 与它的消费方，避免断言退化成永真。
-  for (const expected of ["client/normalize.mjs", "client/assembly.mjs", "client/test-service.mjs", "client/settings.mjs"]) {
+  for (const expected of ["client/normalize.mjs", "client/assembly.mjs", "client/test-service.mjs"]) {
     assert.ok(names.includes(expected), `扫描面应包含 ${expected}`);
   }
 
@@ -278,7 +278,7 @@ test("前台判定在 lib/ 下只有一处实现：可见性/焦点只由归一�
     if (/visibilityState|hasFocus/.test(text)) readers.push(relative(LIB_ROOT, file).split(sep).join("/"));
   }
 
-  // 设置区（诊断展示）与装配层（投递判定）都只能消费归一化的产出：任一处再写一次
-  // 等价表达式，这条断言就会失败。
+  // 装配层（投递判定）与测试服务（只读快照）都只能消费归一化的产出：任一处再写一次
+  // 等价表达式，这条断言就会失败（设置界面已移除，它当年是第二个消费方）。
   assert.deepEqual(readers, ["client/normalize.mjs"], "页面可见性/焦点只允许在 client/normalize 里读取");
 });

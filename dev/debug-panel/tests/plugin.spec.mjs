@@ -89,7 +89,7 @@ test("接线：字典注册、样式表 effect、slot 注册在 settings.section
   assert.equal(meta.name, "settings.section");
   assert.equal(meta.id, PLUGIN_ID);
   assert.equal(meta.order, PANEL_SECTION_ORDER);
-  assert.equal(meta.order, 31, "紧跟在主插件的 section 之后（order 30）");
+  assert.equal(meta.order, 31, "沿用历史排布（主插件当年的 section order 是 30）");
   assert.match(meta.label(), /DEV/);
   assert.match(meta.label(), /调试面板/);
 

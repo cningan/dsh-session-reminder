@@ -33,7 +33,11 @@ export const DEPENDENCIES = [
 /** 插件注入清单（本地服务名），由上面那张依赖表派生——它是这份名单的唯一定义处。 */
 export const inject = DEPENDENCIES.map(({ service }) => service);
 
-/** 主插件在设置页的 section order 是 30；面板紧跟在它后面，一眼能看到两者相邻。 */
+/**
+ * 主插件**不注册任何设置 UI**（它的设置区已彻底移除），所以本面板是设置页里唯一与
+ * 会话提醒有关的 section。order 沿用历史值 31（主插件当年就是 30）：面板在插件配置区
+ * 里的相对位置因此不变。
+ */
 export const PANEL_SECTION_ORDER = 31;
 
 export function createPlugin(loadModule) {
@@ -57,7 +61,8 @@ export function createPlugin(loadModule) {
     ctx.effect(() => installPanelStyle(PLUGIN_ID), `${PLUGIN_ID}: stylesheet`);
 
     const Panel = createDebugPanel({ h, useEffect, useState });
-    // 与主插件同款用法：设置页 section（`settings.section`），不是常规设置页的一行。
+    // 设置页 section（`settings.section`），不是常规设置页的一行。主插件已不含任何设置 UI，
+    // 所以这是该 slot 下唯一与会话提醒有关的 section。
     // 注入给面板的协作者只有服务与 t。
     ctx.slots.inject("settings.section", () => ctx.slots.register({
       name: "settings.section",

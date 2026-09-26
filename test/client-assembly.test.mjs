@@ -1,14 +1,16 @@
 /**
- * 装配层的两条契约直测：
+ * 装配层的三条契约直测：
  *
  *   1. **Client 依赖清单单一来源**：`inject`（本地服务名，运行时注入用）与
  *      `package.json` 的 `dsh.client.inject`（官方包名，只用于排序激活）都由
  *      `client/assembly` 的 `CLIENT_DEPENDENCIES` 派生；这里断言两处名单一致
  *      ——任一处单方面增删都会让本测试失败，名单不再各自漂移。
+ *      **本插件没有任何设置 UI，因此清单里没有 `slots`**：只有通知文案需要的 `locale`
+ *      与四个会话/传输源；`slots` 只在设置行注册时才是依赖，这条断言防止它回来。
  *   2. **loader 契约**：同一份源码在内存里打成 bundle（`write: false`，不动仓库产物），
  *      装进最小假浏览器（`window.__ModuleLoader__.load`）跑一遍 `factory(loadModule)`，
  *      断言拿到的是**真正的插件表面**（`apply` 函数 + `inject` 清单），而不是任何
- *      CommonJS 拟态对象。
+ *      CommonJS 拟态对象；插件没有 UI，因此不会向 loader 取任何模块。
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -45,15 +47,24 @@ test("inject 与 package.json 的 dsh.client.inject 由同一张依赖表派生�
   assert.deepEqual(inject, CLIENT_DEPENDENCIES.map(({ service }) => service));
   assert.equal(unique(inject).length, inject.length, "inject 不应有重复的服务名");
 
+  // 没有设置 UI，就没有 slot 依赖：`slots` 与服务名、包名都不得出现在两处名单里。
+  assert.equal(inject.includes("slots"), false, "主插件不含设置 UI，不应再注入 slots");
+  assert.equal(
+    manifest.dsh.client.inject.some((name) => name.includes("ui-slots")),
+    false,
+    "package.json 不应再声明 slots 的提供方包"
+  );
+
   // 包名清单：去重后与 package.json 逐项同序（一个包可以提供多个服务，故只在去重后比对）。
   const providers = CLIENT_DEPENDENCIES.map(({ provider }) => provider);
   assert.deepEqual(unique(providers), manifest.dsh.client.inject);
 });
 
-/** 最小假浏览器：官方源替身 + 假 React，只为把 factory 跑起来。 */
+/** 最小假浏览器：官方源替身，只为把 factory 跑起来（插件没有 UI，不应取任何模块）。 */
 function launch(source) {
   let loaded;
   let plugin;
+  const requested = [];
 
   const window = {
     addEventListener() {},
@@ -62,14 +73,9 @@ function launch(source) {
     __ModuleLoader__: {
       load(input) {
         loaded = input;
-        const React = {
-          createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
-          useEffect() {},
-          useState: (value) => [value, () => {}]
-        };
         plugin = input.factory((name) => {
-          assert.equal(name, "react");
-          return React;
+          requested.push(name);
+          return {};
         });
       }
     }
@@ -101,7 +107,7 @@ function launch(source) {
     console: { log() {}, info() {}, warn() {}, error() {} }
   }, { filename: "client.js" });
 
-  return { loaded, plugin };
+  return { loaded, plugin, requested };
 }
 
 async function bundleOf() {
@@ -120,11 +126,13 @@ async function bundleOf() {
 }
 
 test("loader 契约：__ModuleLoader__.load 拿到 id 与能跑出插件表面的 factory", async () => {
-  const { loaded, plugin } = launch(await bundleOf());
+  const { loaded, plugin, requested } = launch(await bundleOf());
 
   assert.ok(loaded !== undefined, "bundle 应注册到 window.__ModuleLoader__.load");
   assert.equal(loaded.id, PLUGIN_ID);
   assert.equal(typeof loaded.factory, "function");
+  // 插件没有 UI：factory 收到了 loadModule，但一次都不该用它（不再取 react）。
+  assert.deepEqual(requested, [], "不含 UI 的插件不应向 loader 要任何模块");
 
   // 真正的 ESM 模块表面：只有 apply 与 inject 两个键，没有 CommonJS 拟态残留。
   assert.deepEqual(Object.keys(plugin), ["apply", "inject"]);

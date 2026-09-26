@@ -45,7 +45,31 @@ test("falls back to the generic stop text when a detail-carrying reason has none
 
 test("english and chinese dictionaries carry the same keys", () => {
   assert.deepEqual(Object.keys(dictionaries.zh).sort(), Object.keys(dictionaries.en).sort());
-  assert.ok(Object.keys(dictionaries.zh).length > 20);
+  // 字典只剩**通知文案**（含测试服务投递的那条固定载荷）：门限随设置界面移除下调，
+  // 它只防「字典被清空」，不是行为断言；设置区专有键由下一条断言显式锁死。
+  assert.ok(Object.keys(dictionaries.zh).length > 15);
+});
+
+test("设置区专有文案键已随设置界面移除", () => {
+  for (const lang of ["zh", "en"]) {
+    for (const gone of [
+      "notifications",
+      "notificationsDescription",
+      "enableNotifications",
+      "enabledNotifications",
+      "nativeBridgeDetected",
+      "testNotification",
+      "testNotificationSent",
+      "testNotificationFailed",
+      "notificationDenied",
+      "notificationUnavailable"
+    ]) {
+      assert.equal(gone in dictionaries[lang], false, `设置区文案 ${gone} 应随设置界面移除（${lang}）`);
+    }
+  }
+  // 阳性对照：测试服务投递的那条固定载荷仍要用到这两个键。
+  assert.equal(typeof dictionaries.zh.testNotificationTitle, "string");
+  assert.equal(typeof dictionaries.zh.testNotificationMessage, "string");
 });
 
 test("pending kinds map to their own words and fall back to question", () => {
