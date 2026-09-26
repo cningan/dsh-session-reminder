@@ -5,17 +5,35 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build:client": "node scripts/build-client.mjs",
+    "build:client:debug": "node scripts/build-client.mjs --debug",
+    "prepack": "node scripts/build-client.mjs",
     "test": "node --test",
     "diagnose": "node scripts/check-diagnostics.mjs"
   },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "docs",
+    "README.md",
+    "README.zh.md",
+    "SPEC.md",
+    "CONTEXT.md"
+  ],
   "main": "lib/index.js",
   "exports": {
-    ".": { "default": "./lib/index.js" },
-    "./client": { "default": "./lib/client.js" },
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
     "./package.json": "./package.json"
   },
   "dsh": {
-    "bundle": { "patch": "./cordis.patch.yml" },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "platform": "web",
       "inject": [
@@ -26,5 +44,8 @@
       ]
     }
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
 }
