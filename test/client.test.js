@@ -21,7 +21,7 @@ function observable(initial) {
   };
 }
 
-function createHarness({ statuses = new Map(), currentId, detailBySession = {}, bindings = {}, native = "browser", focused = false, browserPermission } = {}) {
+function createHarness({ statuses = new Map(), currentId, detailBySession = {}, bindings = {}, native = "browser", focused = false, browserPermission, localeLanguage = "en" } = {}) {
   const notices = [];
   const shellPayloads = [];
   const webviewPayloads = [];
@@ -98,6 +98,14 @@ function createHarness({ statuses = new Map(), currentId, detailBySession = {}, 
   const current = observable({ key: currentId });
   const connectionState = observable("connected");
   const detailSources = new Map(Object.entries(detailBySession));
+  // 官方 locale 服务替身：捕获插件注册的字典，按 `localeLanguage` 解析 `{param}` 插值。
+  let registeredDictionaries;
+  const translate = (key, params) => {
+    const table = registeredDictionaries?.[localeLanguage] ?? {};
+    const template = typeof table[key] === "string" ? table[key] : key;
+    if (params === void 0) return template;
+    return template.replace(/\{(\w+)\}/g, (match, name) => (name in params ? String(params[name]) : match));
+  };
   const ctx = {
     sessions: {
       list,
@@ -111,6 +119,10 @@ function createHarness({ statuses = new Map(), currentId, detailBySession = {}, 
     },
     uiSession: { sessionStatus, adapter: { current } },
     connection: { state: connectionState },
+    locale: {
+      register(_namespace, dictionaries) { registeredDictionaries = dictionaries; return () => {}; },
+      bind(_namespace) { return translate; }
+    },
     effect(effect) {
       const dispose = effect();
       if (typeof dispose === "function") cleanup.push(dispose);
@@ -132,13 +144,17 @@ function createHarness({ statuses = new Map(), currentId, detailBySession = {}, 
   }, { filename: "lib/client.js" });
   window.plugin.apply(ctx);
 
-  const settingsElement = registrations[0].render();
+  const registration = registrations[0];
+  const settingsProps = typeof registration.meta.inject === "function" ? registration.meta.inject() : {};
+  const settingsElement = registration.render(settingsProps);
   return {
     notices,
     shellPayloads,
     webviewPayloads,
     opened,
-    model: settingsElement.props.model,
+    registration,
+    settingsElement,
+    model: settingsProps.model,
     setRows: (byId) => list.set({ byId }),
     setStatuses: (next) => sessionStatus.set(next),
     setConnection: (next) => connectionState.set(next),
@@ -365,4 +381,29 @@ test("does not notify while the DSH page is foregrounded", () => {
   harness.setStatuses(new Map([["background", { running: false, completionUnread: true }]]));
 
   assert.equal(harness.notices.length, 0);
+});
+
+test("registers its settings as a plugin settings section, not a general settings row", () => {
+  const harness = createHarness({ currentId: "current" });
+
+  assert.equal(harness.registration.meta.name, "settings.section");
+  assert.equal(harness.registration.meta.id, "@cningan/dsh-session-status");
+  assert.equal(typeof harness.registration.meta.label, "function");
+  assert.equal(harness.registration.meta.label(), "Session reminders");
+});
+
+test("follows the official locale dictionary instead of guessing from the document or navigator", () => {
+  const harness = createHarness({
+    currentId: "current",
+    localeLanguage: "zh",
+    statuses: new Map([["background", { running: true, completionUnread: false }]])
+  });
+
+  harness.setStatuses(new Map([["background", { running: false, completionUnread: true }]]));
+
+  assert.equal(harness.notices.length, 1);
+  assert.equal(harness.notices[0].title, "会话已中断或停止");
+  assert.match(harness.notices[0].options.body, /Background session/);
+  assert.match(harness.notices[0].options.body, /无法确定原因/);
+  assert.equal(harness.registration.meta.label(), "会话提醒");
 });

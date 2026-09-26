@@ -24,22 +24,17 @@ The shell implementation is an external integration boundary and is not included
 
 - The package name is @cningan/dsh-session-status, version 0.3.1. The package manifest marks it private.
 - lib/index.js is the empty Host half: it declares no Host injection and has an empty apply function.
-- lib/client.js is the loader-ready Client bundle and registers the session notification capability/settings row.
+- lib/client.js is the loader-ready Client bundle and registers the session notification capability plus a plugin settings section.
 
-A DSH profile composes the package using its package name. Example insert row:
+The package declares `dsh.bundle.patch` (`cordis.patch.yml`), so the official channel can treat it as a bundle: install it with `plugin_manager` `install_bundle` (or Add plugin in the client) and that patch mounts the package's own entry (`id: session-status`, `name: '@cningan/dsh-session-status'`). Install from a local `.tgz`, whose contents are unpacked into the profile; do not use a directory or `link:` input, which only creates a junction and cannot resolve `@deepseek-ai/*`.
 
-~~~yaml
-- id: session-status
-  name: '@cningan/dsh-session-status'
-~~~
-
-This repository is the maintained source location. A deployed profile is an external runtime/composition target; this repository setup did not modify any profile configuration.
+This repository is the maintained source location. A deployed profile is an external runtime/composition target; this repository does not hand-edit profile files (no manual `package.json` or `dsh.profile.bundles` changes).
 
 ## Enable and check
 
-Open Settings → General → Session reminders. The row reports a recognized workbench bridge or browser-notification permission state; when the bridge is absent, the browser path can still be enabled if supported. Use Send test reminder to exercise the available delivery path.
+Open the plugin settings page and find its Session reminders section (registered on `settings.section`). Reminder text and the section follow the DSH interface language through the official locale service. The section reports a recognized workbench bridge or browser-notification permission state; when the bridge is absent, the browser path can still be enabled if supported. Use Send test reminder to exercise the available delivery path.
 
-The local `desktop` Profile plugin copy has been updated. The automatic session-stop path still requires an end-to-end check in a separate DSH session; do not treat the settings self-check or unit tests as that validation.
+The `desktop` profile has the plugin installed through the official channel from a local tarball. The automatic session-stop path still requires an end-to-end check in a separate DSH session; do not treat the settings self-check or unit tests as that validation.
 
 ## Compatibility
 
@@ -47,7 +42,7 @@ This bundle consumes `uiSession.sessionStatus`, `connection.state`, the selected
 
 ## Build and test status
 
-Run `npm test` for the built-in Node test suite covering session edges, terminal reasons, channel detection, foreground rules, and connection-loss suppression. The checked-in Client file is already the DSH loader bundle; tests do not replace host/plugin integration or real notification testing.
+Run `npm test` for the built-in Node test suite covering session edges, terminal reasons, channel detection, foreground rules, connection-loss suppression, the plugin settings-section registration, and locale-dictionary language following. The checked-in Client file is already the DSH loader bundle; tests do not replace host/plugin integration or real notification testing.
 
 ## Known limitations
 

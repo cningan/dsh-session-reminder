@@ -24,22 +24,17 @@ Shell 桥的实现属于外部集成边界，不包含在本仓库中。
 
 - 包名为 @cningan/dsh-session-status，版本 0.3.1；manifest 将其标记为 private。
 - lib/index.js 是空 Host 入口，不声明 Host 注入，apply 为空函数。
-- lib/client.js 是可由 DSH loader 加载的 Client bundle，并注册会话通知能力/设置行。
+- lib/client.js 是可由 DSH loader 加载的 Client bundle，并注册会话通知能力与插件设置区（section）。
 
-DSH Profile 通过包名组合此插件。配置行示例：
+包声明 `dsh.bundle.patch`（`cordis.patch.yml`），官方渠道才会把它识别为 bundle：用 `plugin_manager` 的 `install_bundle`（或客户端「添加插件」）安装，自带 patch 会挂载本包自己的条目（`id: session-status`、`name: '@cningan/dsh-session-status'`）。安装输入用本地 `.tgz`，内容解包进 profile；不要用目录或 `link:` 形式——那只建 junction，`@deepseek-ai/*` 无法解析。
 
-~~~yaml
-- id: session-status
-  name: '@cningan/dsh-session-status'
-~~~
-
-本仓库是维护源码位置。已部署的 Profile 是外部运行/组合目标；本次建仓没有修改任何 Profile 配置。
+本仓库是维护源码位置。已部署的 Profile 是外部运行/组合目标；本仓库不手写 Profile 文件（不改 `package.json` 或 `dsh.profile.bundles`）。
 
 ## 启用与自检
 
-打开 Settings → General → Session reminders。设置行会显示已识别的 workbench 桥接或浏览器通知权限状态；如果桥接缺失，仍可在支持时启用浏览器通知。使用 Send test reminder 测试当前可用的提醒路径。
+打开插件设置页，找到其中的「会话提醒」区（注册于 `settings.section`）。提醒文案与设置区经官方 locale 服务跟随 DSH 界面语言。该区会显示已识别的 workbench 桥接或浏览器通知权限状态；如果桥接缺失，仍可在支持时启用浏览器通知。使用 Send test reminder 测试当前可用的提醒路径。
 
-本地 `desktop` Profile 插件副本已更新。自动会话停止通知仍需在独立 DSH 会话中做端到端验证；设置自检和单元测试不能替代该验证。
+`desktop` Profile 现已经官方渠道、以本地压缩包安装该插件。自动会话停止通知仍需在独立 DSH 会话中做端到端验证；设置自检和单元测试不能替代该验证。
 
 ## 兼容性
 
@@ -47,7 +42,7 @@ DSH Profile 通过包名组合此插件。配置行示例：
 
 ## 构建与测试状态
 
-运行 `npm test` 可执行内置 Node 测试，覆盖会话边沿、terminal reason、渠道识别、前台抑制和连接断开误报。当前 Client 文件本身就是 DSH loader bundle；这些测试不能代替 DSH 集成和真实通知验证。
+运行 `npm test` 可执行内置 Node 测试，覆盖会话边沿、terminal reason、渠道识别、前台抑制、连接断开误报、插件设置区注册与 locale 字典语言跟随。当前 Client 文件本身就是 DSH loader bundle；这些测试不能代替 DSH 集成和真实通知验证。
 
 ## 已知限制
 

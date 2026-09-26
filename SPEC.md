@@ -22,6 +22,8 @@ DSH Web 用户会同时跑多个会话：当窗口失焦或隐藏时，一个会
 8. 作为维护者，我想让插件只读官方表面、不为通知保留或打开其它会话，以便不动 DSH 的会话事实与恢复。
 9. 作为维护者，我想让同一 run 每一种通知至多一次，以便不重复打扰。
 10. 作为用户/维护者，我想用设置页自检发固定测试载荷验证投递通道，以便不改会话状态就能确认通道可用。
+11. 作为中文用户，我想让提醒文案与设置区始终跟随 DSH 界面语言，以便不出现中英混排或语言漂移。
+12. 作为维护者，我想让设置入口位于插件配置页（而不是常规设置页），以便插件配置与常规设置分区明确。
 
 ## 实现决策
 
@@ -31,11 +33,13 @@ DSH Web 用户会同时跑多个会话：当窗口失焦或隐藏时，一个会
 - **连接处理**：订阅 `connection.state` 仅用于重连后重新同步；非连接状态（含 connecting）不发通知。
 - **投递与前台规则**：等待/停止提醒只在对应页面/窗口隐藏或失焦时发送，与当前选中哪个会话无关；设置页自检是有意的前台例外，发送固定测试载荷、不改变会话状态。桥尝试顺序 `window.dshShell.notify` → `window.chrome.webview.postMessage`；载荷只含 type/kind/title/message，不含会话 id、不序列化整个会话。浏览器路径在权限已授予时用 Notification API，`silent: false` 请求平台声音；已暴露但静默无操作的桥无法检测。独立闪烁（flash-only）需要 DSH 核心/preload 变更，用户已拒绝，不做。
 - **状态与所有权**：DSH 拥有持久会话事实、待处理交互、运行/错误状态、选择语义与连接恢复；插件只持有临时状态（每会话边沿去重、选中会话观察、投递能力/权限快照）。订阅/监听器经 Client 生命周期 effects 释放，不建轮询。
-- **设置项**：`Settings → General → Session reminders` 设置行以 id `session-notifications`、order 30 注册到 `settings.general.item`；报告投递能力或浏览器权限状态，可请求权限，提供 Send test reminder。
+- **设置项**：在**插件配置页**的 `settings.section` 注册 section（id `@cningan/dsh-session-status`、order 30、label 走 locale），内容区报告投递能力或浏览器权限状态，可请求权限，提供 Send test reminder。不是常规设置页的 `settings.general.item` 行。
+- **语言**：文案字典经官方 `locale` 服务注册（`ctx.locale.register` / `ctx.locale.bind`），语言跟随 DSH 界面设置；不读 `document.documentElement.lang` 或 `navigator.language` 猜测语言，也不在插件启动时把语言定死。
+- **可安装性**：包声明 `dsh.bundle.patch`（`./cordis.patch.yml`）并自带该 patch，官方安装渠道才能把它识别为 bundle；安装输入用本地 `.tgz`（内容解包进 profile），不用目录/`link:` 形式（只建 junction 会让 `@deepseek-ai/*` 解析失败）。
 
 ## 测试决策
 
-- **测试约定**：用 Node 内置 test runner（`npm test`），覆盖生命周期边沿、事件原因分类、渠道识别、去重、前台抑制与连接断开处理；这些是契约级测试，不替代真实 DSH 集成、原生 shell 行为或操作系统通知验证。
+- **测试约定**：用 Node 内置 test runner（`npm test`），覆盖生命周期边沿、事件原因分类、渠道识别、去重、前台抑制、连接断开处理、设置区注册位置（`settings.section`）与语言跟随官方 locale 字典；这些是契约级测试，不替代真实 DSH 集成、原生 shell 行为或操作系统通知验证。
 - **运行态验证**：有效的自动通知端到端测试必须用全新、普通的 DSH 用户会话，并在 DSH 页面/窗口隐藏或失焦时结束；构建会话、子 Agent、单元测试与前台设置自检都不满足该测试。在真实会话停止的用户可见自动通知得到确认之前，不声称 E2E 成功、不推送 GitHub。
 
 ## 范围外
@@ -50,4 +54,5 @@ DSH Web 用户会同时跑多个会话：当窗口失焦或隐藏时，一个会
 - 兼容性：bundle 消费 0.1.7-alpha.1 时代的 `uiSession.sessionStatus` / `connection.state` 契约，无更早字段名回退；运行时兼容性未验证（UNVERIFIED），没有独立运行时兼容矩阵；历史适配/修复与版本差异见 docs/compatibility.md。
 - 运行中的 Client `SessionSnapshot` 契约没有 `nodes` 字段，不得从未文档化属性推断停止原因。
 - 原生桥载荷无声音字段；外部 shell 是否播放声音或做点击路由在本仓库未知，不要从浏览器路径推断。
+- 安装契约：只走官方渠道（`plugin_manager` / 客户端「添加插件」），本地插件用压缩包投放，先本地测试通过再考虑远端；详见 AGENTS.md 的安装规约与 `dsh-profiles/docs/install-specs.md`。
 - 当包入口、运行时契约、用户可见行为、所有权不变量或关键路径变化时，更新本文件；历史兼容性事实保留在 docs/compatibility.md，不写入独立架构地图文档。
