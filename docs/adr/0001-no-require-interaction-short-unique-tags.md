@@ -2,7 +2,7 @@
 
 桌面 WebView（Electron / WebView2）下，`requireInteraction: true` 的通知会被平台**静默丢弃**——`new Notification()` 构造成功（我们的代码拿到 `true`），但平台既不显示、也不触发 `onshow`/`onerror`/`onclose`；把会话 id 拼进 `tag`（曾达 94 字符）同样会导致丢弃。因此所有提醒只用系统默认超时（`silent: false` + 逐条唯一的短 tag `dshss-N`），代价是等待/中断类提醒不再"常驻直到用户处理"。
 
-这是 2026-09-26 用 A/B 探针实测确认的（`test-probe:test` 触发 `onshow`，唯一差异是 `requireInteraction` 的 `test-probe:interrupted` 零事件），由 `test/client.test.js` 中三条回归测试锁定；诊断日志见 `lib/index.js` 的 JSONL sink 与 `scripts/check-diagnostics.mjs`。
+这是 2026-09-26 用 A/B 探针实测确认的（`test-probe:test` 触发 `onshow`，唯一差异是 `requireInteraction` 的 `test-probe:interrupted` 零事件），由 `test/delivery.test.mjs`（通知参数：绝不设置 `requireInteraction`、tag 短且唯一）与 `test/debug-tools.test.mjs`、`test/model-surface.test.mjs`（探针与设置页自检的载荷、键前缀与共用计数器）锁定；诊断日志见 `lib/index.js` 的 JSONL sink 与 `scripts/check-diagnostics.mjs`。
 
 ## Considered Options
 

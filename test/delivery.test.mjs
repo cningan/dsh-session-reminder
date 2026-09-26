@@ -10,7 +10,8 @@ import {
   createDelivery,
   DELIVERY_OUTCOMES,
   hasNativeBridge,
-  readBrowserPermission
+  readBrowserPermission,
+  readUserActivation
 } from "../lib/client/delivery.mjs";
 
 const PLUGIN_ID = "@cningan/dsh-session-status";
@@ -298,4 +299,28 @@ test("reads capability from injected doubles instead of guessing", () => {
   assert.equal(readBrowserPermission({}), "default");
   assert.equal(readBrowserPermission(null), "unsupported");
   assert.equal(readBrowserPermission({ get permission() { throw new Error("nope"); } }), "unsupported");
+});
+
+test("reads sticky user activation from the platform, and says null when there is none", () => {
+  // 装配层把这份事实并进投递记录（曾经只在 vm 契约测试里断过），映射本身在这里直测。
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const withNavigator = (value) => Object.defineProperty(globalThis, "navigator", { value, configurable: true });
+  try {
+    withNavigator({ userActivation: { isActive: true, hasBeenActive: true } });
+    assert.deepEqual(readUserActivation(), { active: true, everActive: true });
+
+    withNavigator({ userActivation: { isActive: false, hasBeenActive: true } });
+    assert.deepEqual(readUserActivation(), { active: false, everActive: true });
+
+    // 没有 `userActivation`（Node、老 WebView）：给 null，不编一个默认值。
+    withNavigator({});
+    assert.equal(readUserActivation(), null);
+
+    // 读取本身抛错也只是一次没有事实，不能反过来影响投递。
+    withNavigator({ get userActivation() { throw new Error("no activation"); } });
+    assert.equal(readUserActivation(), null);
+  } finally {
+    if (descriptor === undefined) delete globalThis.navigator;
+    else Object.defineProperty(globalThis, "navigator", descriptor);
+  }
 });
