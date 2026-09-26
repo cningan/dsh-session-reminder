@@ -57,7 +57,7 @@ This bundle consumes `uiSession.sessionStatus`, `connection.state`, the selected
 
 ## Build and test status
 
-Run `npm test` for the built-in Node test suite covering session edges, terminal reasons, channel detection, foreground rules, connection-loss suppression, the plugin settings-section registration, locale-dictionary language following, and the diagnostics reader's verdicts (fixed-sample JSONL for platform-confirmed, platform-rejected, and unconfirmed deliveries). The checked-in Client file is already the DSH loader bundle; tests do not replace host/plugin integration or real notification testing.
+Run `npm test` for the built-in Node test suite covering session edges, terminal reasons, channel detection, foreground rules, connection-loss suppression, the plugin settings-section registration, locale-dictionary language following, the delivery layer's channel fallback and platform-event feedback (minimal doubles only, no whole-browser simulation), and the diagnostics reader's verdicts (fixed-sample JSONL for platform-confirmed, platform-rejected, and unconfirmed deliveries). The checked-in Client file is already the DSH loader bundle; tests do not replace host/plugin integration or real notification testing.
 
 ## Known limitations
 
