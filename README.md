@@ -38,7 +38,7 @@ The `desktop` profile has the plugin installed through the official channel from
 
 ## Diagnostics
 
-The Client half reports what it observed — load snapshot, session/status source shape, run edges, the foreground test, and the delivery result — to the Host half, which appends them to `<profile>/.dsh-session-status/diagnostics.jsonl`; the Host also writes a `host-ready` marker on load, which separates "Host never ran" from "Client never reported". Run `npm run diagnose` (or `node scripts/check-diagnostics.mjs <file>`) to read that file and get a verdict with an exit code: `0` delivered, `1` broken chain (with the reason), `2` no data, `3` no stop edge observed yet. This is how a run is audited after the fact instead of watching the window.
+The Client half reports what it observed — load snapshot, session/status source shape, run edges, the foreground test, the delivery result, and the platform's own notification lifecycle events — to the Host half, which appends them to `<profile>/.dsh-session-status/diagnostics.jsonl`; the Host also writes a `host-ready` marker on load, which separates "Host never ran" from "Client never reported". Run `npm run diagnose` (or `node scripts/check-diagnostics.mjs <file>`) to read that file and get a verdict with an exit code. The verdict words and their exit-code meanings have a **single source of truth: the `VERDICTS` table documented at the top of `scripts/check-diagnostics.mjs`** — this document deliberately does not restate them. The reader separates "the delivery call succeeded" (`delivered: true`, i.e. `new Notification()` did not throw) from "the platform confirmed the notice was shown" (an `onshow` or `onclose` for the same key): only the latter is the evidence [ADR-0001](docs/adr/0001-no-require-interaction-short-unique-tags.md) rests on. A successful call with no platform event for that key is reported as unconfirmed, never as success, and an `onerror` is reported as a platform rejection carrying its error text. This is how a run is audited after the fact instead of watching the window.
 
 ## Compatibility
 
@@ -57,7 +57,7 @@ This bundle consumes `uiSession.sessionStatus`, `connection.state`, the selected
 
 ## Build and test status
 
-Run `npm test` for the built-in Node test suite covering session edges, terminal reasons, channel detection, foreground rules, connection-loss suppression, the plugin settings-section registration, and locale-dictionary language following. The checked-in Client file is already the DSH loader bundle; tests do not replace host/plugin integration or real notification testing.
+Run `npm test` for the built-in Node test suite covering session edges, terminal reasons, channel detection, foreground rules, connection-loss suppression, the plugin settings-section registration, locale-dictionary language following, and the diagnostics reader's verdicts (fixed-sample JSONL for platform-confirmed, platform-rejected, and unconfirmed deliveries). The checked-in Client file is already the DSH loader bundle; tests do not replace host/plugin integration or real notification testing.
 
 ## Known limitations
 

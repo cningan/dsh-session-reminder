@@ -39,12 +39,13 @@ DSH Web 用户会同时跑多个会话：当窗口失焦或隐藏时，一个会
 - **可安装性**：包声明 `dsh.bundle.patch`（`./cordis.patch.yml`）并自带该 patch，官方安装渠道才能把它识别为 bundle；安装输入用本地 `.tgz`（内容解包进 profile），不用目录/`link:` 形式（只建 junction 会让 `@deepseek-ai/*` 解析失败）。
 - **判定核心的深化（进行中）**：把「会话快照 → 提醒」的判定从浏览器装配里抽成纯 module `core/decide`，接口是 `observe(snapshot) → notices`（判定状态由 core 自己持有，调用者只喂快照）。输入是装配层**归一化后的领域快照**（`sessions[{ id, title, running, pending, unread, inList }]`、`currentId`、`background`、`turnEnd`），输出是语义枚举（`{ sessionId, kind: pending|terminal, reason, detail }`）——core 零 locale 依赖，文案由 `core/text` 映射；reason 词表见 `core/classify` 的 `TERMINAL_REASONS`。调试能力作为独立 module 由装配层在 `__DEBUG__` 下注入，使 model 表面在两种构建里一致。迁移分九步、每步保持测试绿；未采纳的候选见 issue #1–#4。
 - **构建与调试分离**：`lib/client.js` 是构建产物（esbuild 打包 `lib/client/`）。正式构建不含诊断面板、探针与测试模式 API；调试构建（`build:client:debug`）保留它们。`npm test` 经 `pretest` 针对调试构建运行，`npm run check:production` 断言正式产物无调试残留，`prepack` 走正式构建。见 [ADR-0002](docs/adr/0002-debug-capability-only-in-debug-build.md)。
-- **诊断与可审计性**：Host 半边注入 `webServer` 并注册 `/plugins/dsh-session-status/diagnostics`，把 Client 上报的装载快照、数据源形状（列表是否有 `byId`、`sessionStatus` 是否覆盖当前会话）、运行/等待边沿、前台判定与投递结果追加写入 profile 下 `.dsh-session-status/diagnostics.jsonl`；Host 加载时先写一条 `host-ready`，用来区分"Host 未运行"与"Client 未上报"。上报失败不影响提醒行为。`npm run diagnose`（`scripts/check-diagnostics.mjs`）读取该文件给出结论与退出码（0 已投递 / 1 链路断开 / 2 无数据 / 3 尚未观察到停止边沿）。
+- **诊断与可审计性**：Host 半边注入 `webServer` 并注册 `/plugins/dsh-session-status/diagnostics`，把 Client 上报的装载快照、数据源形状（列表是否有 `byId`、`sessionStatus` 是否覆盖当前会话）、运行/等待边沿、前台判定与投递结果追加写入 profile 下 `.dsh-session-status/diagnostics.jsonl`；Host 加载时先写一条 `host-ready`，用来区分"Host 未运行"与"Client 未上报"。上报失败不影响提醒行为。`npm run diagnose`（`scripts/check-diagnostics.mjs`）读取该文件给出结论与退出码；**结论词与退出码语义的唯一定义是该脚本头部的 `VERDICTS` 表**，本规格与 README 只引用、不复制，避免多处漂移。读方区分「投递调用成功」（`delivered: true`，即 `new Notification()` 没抛错）与「平台确认显示」（同一 key 的 `onshow`/`onclose`）：只有后者才是 [ADR-0001](docs/adr/0001-no-require-interaction-short-unique-tags.md) 所需的强证据；`delivered: true` 但该 key 零平台反馈时给出"未确认"结论而不是成功，`onerror` 则给出带 error 文本的平台拒绝结论。
 
 ## 测试决策
 
 - **判定族直测**：判定逻辑（停止/运行边沿、原因分类、去重、抑制、等待优先于停止、tag 唯一性）以 **Node 直测**覆盖——喂领域快照序列，不模拟浏览器；`vm` 契约测试瘦身为装配级（订阅 → 投递 → 上报的少量集成），不再逐条重建假浏览器。
 - **测试约定**：用 Node 内置 test runner（`npm test`），覆盖生命周期边沿、事件原因分类、渠道识别、去重、前台抑制、连接断开处理、设置区注册位置（`settings.section`）、语言跟随官方 locale 字典，以及诊断契约（Host 路由的写入与拒绝分支、Client 上报内容与前台抑制上报）；这些是契约级测试，不替代真实 DSH 集成、原生 shell 行为或操作系统通知验证。
+- **诊断读方直测**：读方（`scripts/check-diagnostics.mjs`）以固定样本 JSONL 直测——「平台确认显示」「平台 onerror」「仅投递调用成功、无平台事件」三种输入各断言结论词与退出码；判定面是纯函数 `analyze(records)`，CLI 只在被直接执行时运行。
 - **运行态验证**：有效的自动通知端到端测试必须用全新、普通的 DSH 用户会话，并在 DSH 页面/窗口隐藏或失焦时结束；构建会话、子 Agent、单元测试与前台设置自检都不满足该测试。在真实会话停止的用户可见自动通知得到确认之前，不声称 E2E 成功、不推送 GitHub。
 
 ## 范围外

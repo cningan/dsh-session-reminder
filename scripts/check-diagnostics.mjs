@@ -181,7 +181,7 @@ function defaultFile() {
 
 function print(result) {
   for (const line of result.report) console.log(line);
-  console.log("");
+  if (result.report.at(-1) !== "") console.log("");
   console.log(`VERDICT: ${result.label}`);
   console.log(result.message);
 }

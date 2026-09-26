@@ -38,7 +38,7 @@ Shell 桥的实现属于外部集成边界，不包含在本仓库中。
 
 ## 诊断
 
-Client 半边把它观察到的事实（装载快照、会话/状态数据源形状、运行边沿、前台判定与投递结果）上报给 Host 半边，后者追加写入 `<profile>/.dsh-session-status/diagnostics.jsonl`；Host 加载时还会先写一条 `host-ready`，用来区分"Host 没跑起来"与"Client 没上报"。运行 `npm run diagnose`（或 `node scripts/check-diagnostics.mjs <文件>`）读取该文件并给出结论与退出码：`0` 已投递、`1` 链路断开（附原因）、`2` 无数据、`3` 尚未观察到停止边沿。这样一次运行可以事后审计，而不必盯着窗口等它结束。
+Client 半边把它观察到的事实（装载快照、会话/状态数据源形状、运行边沿、前台判定、投递结果，以及平台自己的通知生命周期事件）上报给 Host 半边，后者追加写入 `<profile>/.dsh-session-status/diagnostics.jsonl`；Host 加载时还会先写一条 `host-ready`，用来区分"Host 没跑起来"与"Client 没上报"。运行 `npm run diagnose`（或 `node scripts/check-diagnostics.mjs <文件>`）读取该文件并给出结论与退出码。**结论词与退出码语义的唯一定义是 `scripts/check-diagnostics.mjs` 头部文档中的 `VERDICTS` 表**，本文档刻意不复述它们。读方区分「投递调用成功」（`delivered: true`，即 `new Notification()` 没抛错）与「平台确认显示」（同一 key 的 `onshow` 或 `onclose`）：只有后者才是 [ADR-0001](docs/adr/0001-no-require-interaction-short-unique-tags.md) 所依赖的证据。调用成功但该 key 没有任何平台事件时给出"未确认"结论、绝不报告成功；出现 `onerror` 时给出平台拒绝结论并附上 error 文本。这样一次运行可以事后审计，而不必盯着窗口等它结束。
 
 ## 兼容性
 
@@ -57,7 +57,7 @@ Client 半边把它观察到的事实（装载快照、会话/状态数据源形
 
 ## 构建与测试状态
 
-运行 `npm test` 可执行内置 Node 测试，覆盖会话边沿、terminal reason、渠道识别、前台抑制、连接断开误报、插件设置区注册与 locale 字典语言跟随。当前 Client 文件本身就是 DSH loader bundle；这些测试不能代替 DSH 集成和真实通知验证。
+运行 `npm test` 可执行内置 Node 测试，覆盖会话边沿、terminal reason、渠道识别、前台抑制、连接断开误报、插件设置区注册、locale 字典语言跟随，以及诊断读方的结论（固定样本 JSONL：平台确认显示 / 平台拒绝 / 未确认三种投递）。当前 Client 文件本身就是 DSH loader bundle；这些测试不能代替 DSH 集成和真实通知验证。
 
 ## 已知限制
 
