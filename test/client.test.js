@@ -541,3 +541,28 @@ test("reports the user activation state alongside a delivery", () => {
   const delivery = harness.reports.filter((entry) => entry.body.event === "deliver").at(-1);
   assert.deepEqual(delivery.body.payload.userActivation, { active: false, everActive: false });
 });
+
+test("test mode delivers while the page is still foregrounded", () => {
+  const harness = createHarness({
+    currentId: "current",
+    focused: true,
+    statuses: new Map([["current", { running: true, completionUnread: false }]])
+  });
+
+  // 前台 + 非测试模式：按设计抑制
+  harness.setStatuses(new Map([["current", { running: false, completionUnread: false }]]));
+  assert.equal(harness.notices.length, 0);
+
+  // 打开测试模式后，同样的边沿应当投递
+  assert.equal(harness.model.getSnapshot().testMode, false);
+  harness.model.setTestMode(true);
+  assert.equal(harness.model.getSnapshot().testMode, true);
+  harness.setStatuses(new Map([["current", { running: true, completionUnread: false }]]));
+  harness.setStatuses(new Map([["current", { running: false, completionUnread: false }]]));
+
+  assert.equal(harness.notices.length, 1);
+  assert.equal(harness.notices[0].title, "Session interrupted or stopped");
+  const delivery = harness.reports.filter((entry) => entry.body.event === "deliver").at(-1);
+  assert.equal(delivery.body.payload.delivered, true);
+  assert.equal(delivery.body.payload.background, false);
+});
