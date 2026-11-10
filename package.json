@@ -19,6 +19,7 @@
     "lib/index.js",
     "lib/diagnostics-contract.mjs",
     "cordis.patch.yml",
+    "locale",
     "docs",
     "README.md",
     "README.zh.md",
@@ -34,7 +35,8 @@
     "./client": {
       "default": "./lib/client.js"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
   },
   "dsh": {
     "bundle": {

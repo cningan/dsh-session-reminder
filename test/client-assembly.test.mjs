@@ -74,6 +74,24 @@ test("依赖表把每个本地服务钉到已核实的官方提供方包", () =>
   });
 });
 
+test("插件页显示名来自 locale 资源，不是裸包名", async () => {
+  // DSH 的 `readPluginMeta` 读 `<specifier>/locale/<lang>.json` 的 `meta.title` 作为插件页
+  // 显示名，**缺省才回落到 package.json 的 name**——于是列表里会直接出现
+  // `@cningan/dsh-session-status` 这种不好看的裸包名。这条断言把「有中文名」锁住。
+  for (const language of ["zh", "en"]) {
+    const url = new URL(`../locale/${language}.json`, import.meta.url);
+    const parsed = JSON.parse(await readFile(url, "utf8"));
+    assert.equal(typeof parsed.meta?.title, "string", `${language} 的 locale 应声明 meta.title`);
+    assert.notEqual(parsed.meta.title.trim(), "", `${language} 的 meta.title 不能为空`);
+    assert.equal(typeof parsed.meta?.description, "string", `${language} 的 locale 应声明 meta.description`);
+  }
+  // 资源必须同时满足两件事，否则 readPluginMeta 解析不到它而**静默**回落到包名：
+  //   1. `exports` 暴露 `./locale/*.json`（资源解析走 exports 映射）；
+  //   2. `files` 白名单带上 `locale/`（否则发布包里根本没有这些文件）。
+  assert.equal(manifest.exports["./locale/*.json"], "./locale/*.json", "exports 应暴露 locale 资源");
+  assert.ok(manifest.files.includes("locale"), "files 白名单应包含 locale/");
+});
+
 /** 最小假浏览器：官方源替身，只为把 factory 跑起来（插件没有 UI，不应取任何模块）。 */
 function launch(source) {
   let loaded;

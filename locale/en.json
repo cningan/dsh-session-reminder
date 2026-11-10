@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Session reminders",
+    "description": "Reminds you when a session waits for your approval or answer, or when it stops — the notification title says why it stopped (completed, failed, aborted, ...)."
+  }
+}
