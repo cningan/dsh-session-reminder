@@ -45,3 +45,9 @@
 - 版本：`0.3.1 → 0.4.0`；`private: true` 移除，发布路线切到 npm registry（`publishConfig.access: public`），因为 DSH 插件页的「检查更新」只认同名 registry spec。
 
 真实 E2E 仍待做：需要全新普通的 DSH 用户会话，在页面/窗口隐藏或失焦时结束，确认通知标题是「本轮会话已完成」。
+
+**cningan · 2026-11-10（补）**
+
+插件页显示名：不再显示裸包名 `@cningan/dsh-session-status`，改由包内 locale 资源提供——DSH 的 `readPluginMeta` 读 `<specifier>/locale/<lang>.json` 的 `meta.title`，缺省才回落到 `package.json` 的 `name`。因此新增 `locale/zh.json`（「会话提醒」）与 `locale/en.json`（"Session reminders"），并在 `package.json` 里 `exports` 暴露 `./locale/*.json`、`files` 带上 `locale/`；直测锁住这三处（缺任一处都会**静默**回落成裸包名）。
+
+安装验证：`0.4.0` 已用本地 tgz 装进 `desktop` Profile（`applied`），诊断里出现 `host-ready … "version":"0.4.0"`。发布到 npm 仍被本机 token 拦住（`npm whoami` 401、`PUT` 404），等维护者重新登录后继续。
