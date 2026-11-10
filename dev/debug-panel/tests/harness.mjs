@@ -25,7 +25,7 @@ function resolveMode(mode) {
 export function createFakeService(options = {}) {
   const hostPage = { visibility: "visible", focused: true, background: false, ...(options.page ?? {}) };
   const listeners = new Set();
-  const calls = { setForegroundOverride: [], deliverAdHoc: [], subscribe: 0, unsubscribe: 0 };
+  const calls = { setForegroundOverride: [], deliverAdHoc: [], deliverSample: [], subscribe: 0, unsubscribe: 0 };
   const diagnostics = { status: null, edge: null, deliver: null };
   let override = "auto";
   let sequence = 0;
@@ -75,6 +75,25 @@ export function createFakeService(options = {}) {
       diagnostics.deliver = {
         key: `test-probe:${resolved}:${sequence}`,
         kind: resolved,
+        channel: delivered ? "browser" : "suppressed-foreground",
+        delivered,
+        background,
+        at: "00:00:00",
+        activation: false,
+        foregroundOverride: override
+      };
+      notify();
+      return delivered;
+    },
+    deliverSample(reason) {
+      calls.deliverSample.push(reason);
+      const background = effectivePage().background;
+      const delivered = background;
+      sequence += 1;
+      diagnostics.deliver = {
+        key: `test-probe:sample:${reason}:${sequence}`,
+        kind: reason === "completed" ? "completed" : "interrupted",
+        reason,
         channel: delivered ? "browser" : "suppressed-foreground",
         delivered,
         background,

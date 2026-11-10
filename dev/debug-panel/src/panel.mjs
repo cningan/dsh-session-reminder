@@ -21,6 +21,31 @@
 /** 前台覆盖三态（与主插件 `test-service` 的词表逐项一致）。 */
 export const FOREGROUND_MODES = Object.freeze(["auto", "foreground", "background"]);
 
+/**
+ * 可模拟的停止原因：与主插件 `core/classify` 的 `TERMINAL_REASONS` **逐项、同序**一致
+ * （`tests/panel.spec.mjs` 断言这一点）。`label` 是本面板字典里的键，只用于按钮文字；
+ * 真正的通知文案由主插件按 `reason` 生成——面板不复制那句文案，避免两边各写一遍。
+ */
+export const SAMPLE_REASONS = Object.freeze([
+  { reason: "completed", label: "sampleCompleted" },
+  { reason: "interrupted", label: "sampleInterrupted" },
+  { reason: "process-interrupted", label: "sampleProcessInterrupted" },
+  { reason: "blocked", label: "sampleBlocked" },
+  { reason: "max-tokens", label: "sampleMaxTokens" },
+  { reason: "error", label: "sampleError" },
+  { reason: "agent-error", label: "sampleAgentError" },
+  { reason: "prompt-error", label: "samplePromptError" },
+  { reason: "session-open-error", label: "sampleOpenError" },
+  { reason: "aborted-parent", label: "sampleAbortedParent" },
+  { reason: "aborted-hook", label: "sampleAbortedHook" }
+]);
+
+/** reason → 按钮文案。词表外的原因（不该发生）按「中断（原因未知）」显示。 */
+export function sampleLabel(t, reason) {
+  const found = SAMPLE_REASONS.find((item) => item.reason === reason);
+  return t(found === undefined ? "sampleInterrupted" : found.label);
+}
+
 /** 样式表标记：安装与替换时的身份，只按它查找/替换，不误伤主插件或别的插件样式。 */
 export const PANEL_STYLE_TAG = "@cningan/dsh-session-status-debug/dev-panel.css";
 
@@ -264,9 +289,15 @@ export function describeSnapshot(snapshot, t) {
  */
 export function describeResult(result, t) {
   if (result === null || result === undefined) return "";
-  const probe = result.kind === "interrupted" ? t("probeNameInterrupted") : t("probeNameTest");
   const delivered = Number(result.delivered) || 0;
   const total = Number(result.total) || 1;
+  // 按原因模拟：`kind` 是 `sample`，原因在 `reason` 上；结果只说「投出去没有」，
+  // 文案本身应当由用户在系统通知里看到，面板不复制它。
+  if (result.kind === "sample") {
+    const name = sampleLabel(t, result.reason);
+    return delivered > 0 ? t("resultSampleDelivered", { name }) : t("resultSampleSuppressed", { name });
+  }
+  const probe = result.kind === "interrupted" ? t("probeNameInterrupted") : t("probeNameTest");
   if (total > 1) {
     return delivered === total
       ? t("resultBurstAll", { delivered, total })
@@ -312,6 +343,11 @@ export function createDebugPanel({ h, useEffect, useState }) {
         if (service.deliverAdHoc(kind)) delivered += 1;
       }
       setResult({ kind, delivered, total: times });
+    };
+
+    // 按原因模拟：一次一条，结果同样是「投出去没有」。走服务，不自己拼文案。
+    const simulate = (reason) => {
+      setResult({ kind: "sample", reason, delivered: service.deliverSample(reason) ? 1 : 0, total: 1 });
     };
 
     const modeButton = (mode) => h("button", {
@@ -361,6 +397,18 @@ export function createDebugPanel({ h, useEffect, useState }) {
             "data-probe": "burst",
             onClick: () => probe("test", 3)
           }, t("probeBurst"))
+        )
+      ),
+      h("div", { className: "dshss-dev-section" },
+        h("div", { className: "dshss-dev-section-label" }, t("samplesLabel")),
+        h("div", { className: "dshss-dev-probes" },
+          SAMPLE_REASONS.map(({ reason, label }) => h("button", {
+            className: "dshss-dev-probe",
+            type: "button",
+            "data-sample": reason,
+            key: reason,
+            onClick: () => simulate(reason)
+          }, t(label)))
         )
       ),
       result === null ? null : h("div", {

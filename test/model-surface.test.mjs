@@ -22,13 +22,15 @@ import test from "node:test";
 import vm from "node:vm";
 
 import { CLIENT_BUILDS, validateRecord } from "../lib/diagnostics-contract.mjs";
-import { TEST_SERVICE_NAME } from "../lib/client/test-service.mjs";
+import { TERMINAL_REASONS } from "../lib/core/classify.mjs";
+import { dictionaries, terminalHeadline } from "../lib/core/text.mjs";
+import { SAMPLE_REASONS, TEST_SERVICE_NAME } from "../lib/client/test-service.mjs";
 
 // `pretest` 先构建产物，测试针对它运行（构建脚本只有一种产物）。
 const clientBundle = await readFile(new URL("../lib/client.js", import.meta.url), "utf8");
 
 /** 测试服务的面：契约约定的四个方法，一个不多。 */
-const SERVICE_KEYS = ["setForegroundOverride", "getSnapshot", "subscribe", "deliverAdHoc"];
+const SERVICE_KEYS = ["setForegroundOverride", "getSnapshot", "subscribe", "deliverAdHoc", "deliverSample"];
 /** 产物里不得出现的调试 / 设置界面痕迹（与 scripts/check-production-bundle.mjs 同一张表）。 */
 const DEBUG_MARKERS = [
   "诊断·",
@@ -322,6 +324,51 @@ test("deliverAdHoc 服从前台抑制：抑制时返回 false，但仍留下可�
   harness.service.setForegroundOverride("background");
   assert.equal(harness.service.deliverAdHoc("test"), true);
   assert.equal(harness.notices.length, 1);
+});
+
+test("deliverSample：按原因模拟，文案与真实停止逐字符相同", () => {
+  const harness = launch(clientBundle, { focused: false });
+  const t = (key) => dictionaries.en[key];
+  const expected = [
+    ["completed", "Session run completed", "Sample session"],
+    ["interrupted", "Session interrupted or stopped", "Sample session: The session stopped, but the reason is unavailable"],
+    ["process-interrupted", "This run did not finish (DSH exited)", "Sample session"],
+    ["blocked", "This run was blocked", "Sample session"],
+    ["max-tokens", "This run reached the output limit", "Sample session"],
+    ["error", "This run failed", "Sample session: E_MODEL: upstream 502"],
+    ["agent-error", "Session runtime error", "Sample session: runtime crashed"],
+    ["prompt-error", "Operation failed", "Sample session: E_NET: offline"],
+    ["session-open-error", "The session window failed to load", "Sample session: The session stopped, but the reason is unavailable"],
+    ["aborted-parent", "The parent task stopped this run", "Sample session"],
+    ["aborted-hook", "An extension stopped this run", "Sample session: policy-check"]
+  ];
+
+  // 词表顺序以 core/classify 为准；这张表逐条钉住「标题说为什么停、正文只说标题没说的」。
+  assert.deepEqual(expected.map(([reason]) => reason), [...SAMPLE_REASONS]);
+
+  for (const [reason, title, message] of expected) {
+    assert.equal(harness.service.deliverSample(reason), true, `${reason} 应投出去`);
+    const notice = harness.notices.at(-1);
+    assert.equal(notice.title, title, `${reason} 的标题`);
+    // Web Notification 的正文走 options.body（delivery 层把 notice.message 映射过去）。
+    assert.equal(notice.options.body, message, `${reason} 的正文`);
+    // 真实停止用同一个 terminalHeadline：模拟与真实必须是同一句话。
+    assert.equal(notice.title, terminalHeadline(reason, t), `${reason} 应与真实停止同源`);
+  }
+
+  // 诊断里带着原因（否则「哪条文案」事后无从核对），键前缀沿用探针前缀并标明 sample。
+  const payloads = harness.payloads("deliver");
+  assert.deepEqual(payloads.map((payload) => payload.reason), expected.map(([reason]) => reason));
+  assert.equal(payloads[0].key, "test-probe:sample:completed:1");
+  assert.equal(payloads[1].key, "test-probe:sample:interrupted:2");
+  // `kind` 只分两类：completed 走已完成的投递分支，其余都是 terminal。
+  assert.deepEqual(payloads.map((payload) => payload.kind), expected.map(([reason]) => (reason === "completed" ? "completed" : "interrupted")));
+
+  // 同样服从前台抑制（与自动提醒共用投递路径）。
+  const focused = launch(clientBundle, { focused: true });
+  assert.equal(focused.service.deliverSample("completed"), false);
+  assert.equal(focused.notices.length, 0);
+  assert.equal(focused.payloads("deliver").at(-1).channel, "suppressed-foreground");
 });
 
 test("subscribe：状态变化通知一次，退订后不再通知", () => {

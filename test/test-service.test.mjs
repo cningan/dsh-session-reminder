@@ -1,25 +1,31 @@
 /**
  * 测试服务直测（`lib/client/test-service.mjs`）：不模拟浏览器，只注入替身。
  *
- * 断言四件事：
+ * 断言五件事：
  *   1. **前台覆盖的闸门**：只认 `auto` / `foreground` / `background` 三态，其余取值一律按
  *      `auto`（默认行为因此与没有本服务时一致）；
  *   2. **覆盖只落在 `background` 这一位**：`auto` 原样返回同一个对象（判定不变），另外两态
  *      替换结论、原样带走宿主证据（`visibility` / `focused`）；
- *   3. **服务面就是契约的四个方法**：`dev/` 插件拿到的是这四个键，不是装配层的内部
+ *   3. **服务面就是契约的五个方法**：`dev/` 插件拿到的是这五个键，不是装配层的内部
  *      协作者（权限请求 `requestPermission` 不在 Hook 面上）；
- *   4. **写路径的归一化**：`setForegroundOverride` 与 `deliverAdHoc` 交到模型手上的都是
- *      归一化之后的取值。
+ *   4. **写路径的归一化**：`setForegroundOverride` / `deliverAdHoc` / `deliverSample`
+ *      交到模型手上的都是归一化之后的取值；
+ *   5. **可模拟的原因就是分类词表本身**：`SAMPLE_REASONS` 从 `core/classify` 派生，
+ *      词表外一律按 `interrupted`——面板给出的按钮因此不可能指向不存在的原因。
  */
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { TERMINAL_REASONS } from "../lib/core/classify.mjs";
 import {
   ADHOC_KEY_PREFIX,
   FOREGROUND_MODES,
+  SAMPLE_DETAIL,
+  SAMPLE_REASONS,
   TEST_SERVICE_NAME,
   createTestStatusService,
   foregroundModeOf,
+  sampleReasonOf,
   withForegroundMode
 } from "../lib/client/test-service.mjs";
 
@@ -43,6 +49,10 @@ function createModelDouble() {
     deliverAdHoc(kind) {
       calls.push(["deliverAdHoc", kind]);
       return kind === "interrupted" ? "delivered-interrupted" : "delivered-test";
+    },
+    deliverSample(reason) {
+      calls.push(["deliverSample", reason]);
+      return reason === "completed" ? "delivered-completed" : "delivered-sample";
     }
   };
   return model;
@@ -90,16 +100,38 @@ test("覆盖只落在 background 这一位：auto 原样返回，另外两态只
   assert.equal(withForegroundMode(noDocument, "auto"), noDocument);
 });
 
-test("服务面就是契约的四个方法：装配层的内部协作者不泄漏", () => {
+test("服务面就是契约的五个方法：装配层的内部协作者不泄漏", () => {
   const service = createTestStatusService(createModelDouble());
 
-  assert.deepEqual(Object.keys(service), ["setForegroundOverride", "getSnapshot", "subscribe", "deliverAdHoc"]);
+  assert.deepEqual(Object.keys(service), [
+    "setForegroundOverride",
+    "getSnapshot",
+    "subscribe",
+    "deliverAdHoc",
+    "deliverSample"
+  ]);
   for (const key of ["requestPermission", "sendTestNotification", "notify"]) {
     assert.equal(Object.hasOwn(service, key), false, `服务不应暴露 ${key}`);
   }
 });
 
-test("四个方法都转发给模型，且写路径交出去的是归一化后的取值", () => {
+test("可模拟的原因就是分类词表本身，词表外按 interrupted", () => {
+  // 从 core/classify 派生而不是另抄一份：新增原因时面板与文案不会各说各话。
+  assert.deepEqual([...SAMPLE_REASONS], [...TERMINAL_REASONS]);
+
+  for (const reason of SAMPLE_REASONS) assert.equal(sampleReasonOf(reason), reason);
+  for (const value of [undefined, null, "", "COMPLETED", "completed ", 0, true, {}, ["completed"]]) {
+    assert.equal(sampleReasonOf(value), "interrupted", `${JSON.stringify(value)} 应退化为 interrupted`);
+  }
+
+  // 样例细节只给真有技术细节的那几条；其余原因本来就没有细节，正文只剩会话标题。
+  assert.deepEqual(Object.keys(SAMPLE_DETAIL).sort(), ["aborted-hook", "agent-error", "error", "prompt-error"]);
+  for (const reason of Object.keys(SAMPLE_DETAIL)) {
+    assert.ok(SAMPLE_REASONS.includes(reason), `${reason} 必须是分类词表里的原因`);
+  }
+});
+
+test("五个方法都转发给模型，且写路径交出去的是归一化后的取值", () => {
   const model = createModelDouble();
   const service = createTestStatusService(model);
 
@@ -120,6 +152,11 @@ test("四个方法都转发给模型，且写路径交出去的是归一化后�
   // `kind` 只认 test / interrupted，其余按 test（键与文案因此不会出现野值）。
   assert.equal(service.deliverAdHoc("probe"), "delivered-test");
 
+  assert.equal(service.deliverSample("completed"), "delivered-completed");
+  // reason 只认分类词表，其余按 interrupted（键与文案因此不会出现野值）。
+  assert.equal(service.deliverSample("nonsense"), "delivered-sample");
+  assert.equal(service.deliverSample(undefined), "delivered-sample");
+
   assert.deepEqual(model.calls, [
     ["setForegroundOverride", "background"],
     ["setForegroundOverride", "auto"],
@@ -130,6 +167,9 @@ test("四个方法都转发给模型，且写路径交出去的是归一化后�
     ["deliverAdHoc", "test"],
     ["deliverAdHoc", "test"],
     ["deliverAdHoc", "interrupted"],
-    ["deliverAdHoc", "test"]
+    ["deliverAdHoc", "test"],
+    ["deliverSample", "completed"],
+    ["deliverSample", "interrupted"],
+    ["deliverSample", "interrupted"]
   ]);
 });

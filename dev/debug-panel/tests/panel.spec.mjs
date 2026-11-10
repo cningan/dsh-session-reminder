@@ -16,6 +16,7 @@ import test from "node:test";
 
 import {
   PANEL_STYLE_TAG,
+  SAMPLE_REASONS,
   createDebugPanel,
   describeDeliver,
   describeResult,
@@ -24,6 +25,7 @@ import {
   toneOf
 } from "../src/panel.mjs";
 import { dictionaries } from "../src/strings.mjs";
+import { TERMINAL_REASONS } from "../../../lib/core/classify.mjs";
 import { createFakeService, createTranslator, mountWith, textOf } from "./harness.mjs";
 
 function renderPanel(service, lang = "zh") {
@@ -190,6 +192,33 @@ test("探针按钮调用 deliverAdHoc 并显示结果（test / interrupted / 连
   panel.clickAttr("data-probe", "burst");
   assert.deepEqual(service.calls.deliverAdHoc, ["test", "interrupted", "test", "test", "test"]);
   assert.deepEqual(resultOf(panel), { tone: "delivered", text: "连发 ×3：3/3 条已弹出。" });
+});
+
+test("按原因模拟：11 条停止原因各一个按钮，点了就 deliverSample(reason)", () => {
+  const service = createFakeService({ page: { visibility: "hidden", focused: false, background: true } });
+  const panel = renderPanel(service);
+
+  // 词表与主插件 core/classify 的 TERMINAL_REASONS 逐项、同序一致——面板不另立一份词表。
+  assert.deepEqual(SAMPLE_REASONS.map((item) => item.reason), [...TERMINAL_REASONS]);
+  const buttons = panel.findAll((node) => typeof node.props?.["data-sample"] === "string");
+  assert.deepEqual(buttons.map((node) => node.props["data-sample"]), SAMPLE_REASONS.map((item) => item.reason));
+
+  panel.clickAttr("data-sample", "completed");
+  assert.deepEqual(service.calls.deliverSample, ["completed"]);
+  assert.deepEqual(resultOf(panel), { tone: "delivered", text: "已投递：正常完成" });
+
+  panel.clickAttr("data-sample", "error");
+  assert.deepEqual(service.calls.deliverSample, ["completed", "error"]);
+  assert.deepEqual(resultOf(panel), { tone: "delivered", text: "已投递：模型调用报错" });
+
+  // 前台时同样被抑制：模拟走的是真实投递路径，不是面板自己弹一条。
+  panel.clickAttr("data-mode", "foreground");
+  panel.clickAttr("data-sample", "max-tokens");
+  assert.deepEqual(resultOf(panel), { tone: "suppressed", text: "被前台抑制（未投递）：达到输出上限" });
+
+  // 面板不复制通知文案：结果只报「投出去没有」，标题/正文由主插件按 reason 生成。
+  assert.equal(describeResult({ kind: "sample", reason: "nonsense", delivered: 1, total: 1 }, createTranslator("zh")),
+    "已投递：中断（原因未知）");
 });
 
 test("强制前台 + 探针：不弹，且结果提示与诊断都表明被前台抑制", () => {
