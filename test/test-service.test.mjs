@@ -53,6 +53,10 @@ function createModelDouble() {
     deliverSample(reason) {
       calls.push(["deliverSample", reason]);
       return reason === "completed" ? "delivered-completed" : "delivered-sample";
+    },
+    setDevToolsEnabled(enabled) {
+      calls.push(["setDevToolsEnabled", enabled]);
+      return enabled;
     }
   };
   return model;
@@ -100,7 +104,7 @@ test("覆盖只落在 background 这一位：auto 原样返回，另外两态只
   assert.equal(withForegroundMode(noDocument, "auto"), noDocument);
 });
 
-test("服务面就是契约的五个方法：装配层的内部协作者不泄漏", () => {
+test("服务面就是契约的六个方法：装配层的内部协作者不泄漏", () => {
   const service = createTestStatusService(createModelDouble());
 
   assert.deepEqual(Object.keys(service), [
@@ -108,7 +112,8 @@ test("服务面就是契约的五个方法：装配层的内部协作者不泄�
     "getSnapshot",
     "subscribe",
     "deliverAdHoc",
-    "deliverSample"
+    "deliverSample",
+    "setDevToolsEnabled"
   ]);
   for (const key of ["requestPermission", "sendTestNotification", "notify"]) {
     assert.equal(Object.hasOwn(service, key), false, `服务不应暴露 ${key}`);
@@ -157,6 +162,10 @@ test("五个方法都转发给模型，且写路径交出去的是归一化后�
   assert.equal(service.deliverSample("nonsense"), "delivered-sample");
   assert.equal(service.deliverSample(undefined), "delivered-sample");
 
+  // 总开关：只有严格 true 才算打开（与前台覆盖"只认三态"同一口径）。
+  assert.equal(service.setDevToolsEnabled(true), true);
+  assert.equal(service.setDevToolsEnabled("yes"), false);
+
   assert.deepEqual(model.calls, [
     ["setForegroundOverride", "background"],
     ["setForegroundOverride", "auto"],
@@ -170,6 +179,8 @@ test("五个方法都转发给模型，且写路径交出去的是归一化后�
     ["deliverAdHoc", "test"],
     ["deliverSample", "completed"],
     ["deliverSample", "interrupted"],
-    ["deliverSample", "interrupted"]
+    ["deliverSample", "interrupted"],
+    ["setDevToolsEnabled", true],
+    ["setDevToolsEnabled", false]
   ]);
 });

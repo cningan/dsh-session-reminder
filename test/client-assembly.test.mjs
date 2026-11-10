@@ -47,12 +47,13 @@ test("inject 与 package.json 的 dsh.client.inject 由同一张依赖表派生�
   assert.deepEqual(inject, CLIENT_DEPENDENCIES.map(({ service }) => service));
   assert.equal(unique(inject).length, inject.length, "inject 不应有重复的服务名");
 
-  // 没有设置 UI，就没有 slot 依赖：`slots` 与服务名、包名都不得出现在两处名单里。
-  assert.equal(inject.includes("slots"), false, "主插件不含设置 UI，不应再注入 slots");
+  // 调试面板并回主包后，它挂在**插件自己的页面**（`plugins.detail.section`），因此
+  // 需要 slots；但设置界面仍然没有——`settings.section` 不得回潮。
+  assert.equal(inject.includes("slots"), true, "插件页里的调试面板需要 slots");
   assert.equal(
     manifest.dsh.client.inject.some((name) => name.includes("ui-slots")),
-    false,
-    "package.json 不应再声明 slots 的提供方包"
+    true,
+    "package.json 应声明 slots 的提供方包"
   );
 
   // 包名清单：去重后与 package.json 逐项同序（一个包可以提供多个服务，故只在去重后比对）。
@@ -68,6 +69,7 @@ test("依赖表把每个本地服务钉到已核实的官方提供方包", () =>
   // 逐项钉死，避免下一个版本再漂成猜测。见 .scratch/session-status/issues/14。
   assert.deepEqual(Object.fromEntries(CLIENT_DEPENDENCIES.map(({ service, provider }) => [service, provider])), {
     locale: "@deepseek-ai/dsh-client-locale",
+    slots: "@deepseek-ai/dsh-client-ui-slots",
     sessions: "@deepseek-ai/dsh-api-session-controller",
     connection: "@deepseek-ai/dsh-client-connection",
     uiSession: "@deepseek-ai/dsh-client-ui-session"
@@ -90,6 +92,23 @@ test("插件页显示名来自 locale 资源，不是裸包名", async () => {
   //   2. `files` 白名单带上 `locale/`（否则发布包里根本没有这些文件）。
   assert.equal(manifest.exports["./locale/*.json"], "./locale/*.json", "exports 应暴露 locale 资源");
   assert.ok(manifest.files.includes("locale"), "files 白名单应包含 locale/");
+});
+
+test("插件图标：package.json 声明相对路径，文件在包内且格式/大小合规矩", async () => {
+  // DSH 的 readPluginMeta 只认 `icon` 字段里的**相对路径**（绝对路径、file:// 都会报错），
+  // 允许 SVG / PNG / JPEG / WebP，上限 256 KiB；它也接受导出的 `<specifier>/icon` 资源，
+  // 但声明式写法优先、也更容易被发现。
+  assert.equal(typeof manifest.icon, "string", "package.json 应声明 icon");
+  assert.equal(manifest.icon, "icon.svg");
+  assert.equal(/^[A-Za-z][A-Za-z\d+.-]*:/.test(manifest.icon), false, "icon 不能是绝对 URL");
+  assert.ok(!manifest.icon.startsWith("/") && !manifest.icon.includes(".."), "icon 必须留在包内");
+
+  const file = new URL(`../${manifest.icon}`, import.meta.url);
+  const bytes = await readFile(file);
+  assert.ok(bytes.length > 0, "图标文件不能为空");
+  assert.ok(bytes.length <= 256 * 1024, "图标不得超过 256 KiB");
+  assert.match(bytes.toString("utf8", 0, 64), /<svg[\s>]/, "本项目用 SVG 图标");
+  assert.ok(manifest.files.includes(manifest.icon), "files 白名单应带上图标文件");
 });
 
 /** 最小假浏览器：官方源替身，只为把 factory 跑起来（插件没有 UI，不应取任何模块）。 */

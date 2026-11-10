@@ -9,8 +9,8 @@
  * 重复写不通知；`deliverAdHoc` 服从前台抑制（前台时返回 `false`，但同样写一条
  * `suppressed-foreground` 的诊断记录）并通知订阅者。替身与真实服务语义一致，测试才有意义。
  */
-import { FOREGROUND_MODES } from "../src/panel.mjs";
-import { dictionaries } from "../src/strings.mjs";
+import { FOREGROUND_MODES } from "../lib/client/dev-panel/panel.mjs";
+import { dictionaries } from "../lib/client/dev-panel/strings.mjs";
 
 /** 三态之一里挑出合法值，其余一律 `auto`（与主插件 `foregroundModeOf` 同一口径）。 */
 function resolveMode(mode) {
@@ -25,7 +25,8 @@ function resolveMode(mode) {
 export function createFakeService(options = {}) {
   const hostPage = { visibility: "visible", focused: true, background: false, ...(options.page ?? {}) };
   const listeners = new Set();
-  const calls = { setForegroundOverride: [], deliverAdHoc: [], deliverSample: [], subscribe: 0, unsubscribe: 0 };
+  const calls = { setForegroundOverride: [], deliverAdHoc: [], deliverSample: [], setDevToolsEnabled: [], subscribe: 0, unsubscribe: 0 };
+  let devToolsEnabled = options.devTools !== false;
   const diagnostics = { status: null, edge: null, deliver: null };
   let override = "auto";
   let sequence = 0;
@@ -36,6 +37,7 @@ export function createFakeService(options = {}) {
     notificationPermission: options.permission ?? "granted",
     diagnostics: { ...diagnostics },
     foregroundOverride: override,
+    devTools: { enabled: devToolsEnabled },
     page: effectivePage()
   });
   const notify = () => {
@@ -103,6 +105,13 @@ export function createFakeService(options = {}) {
       };
       notify();
       return delivered;
+    },
+    setDevToolsEnabled(enabled) {
+      calls.setDevToolsEnabled.push(enabled);
+      devToolsEnabled = enabled === true;
+      if (!devToolsEnabled) override = "auto";
+      notify();
+      return devToolsEnabled;
     },
     listenerCount: () => listeners.size
   };

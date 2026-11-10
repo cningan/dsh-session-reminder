@@ -23,10 +23,10 @@ import {
   describeSnapshot,
   installPanelStyle,
   toneOf
-} from "../src/panel.mjs";
-import { dictionaries } from "../src/strings.mjs";
-import { TERMINAL_REASONS } from "../../../lib/core/classify.mjs";
-import { createFakeService, createTranslator, mountWith, textOf } from "./harness.mjs";
+} from "../lib/client/dev-panel/panel.mjs";
+import { dictionaries } from "../lib/client/dev-panel/strings.mjs";
+import { TERMINAL_REASONS } from "../lib/core/classify.mjs";
+import { createFakeService, createTranslator, mountWith, textOf } from "./dev-panel-harness.mjs";
 
 function renderPanel(service, lang = "zh") {
   return mountWith((react) => createDebugPanel(react), { service, t: createTranslator(lang) });
@@ -58,9 +58,10 @@ test("面板一眼看出是开发用，且诊断恰好 4 行（状态源 / 边�
   const service = createFakeService();
   const panel = renderPanel(service);
 
-  assert.match(panel.text(), /DEV/);
-  assert.match(panel.text(), /开发调试面板/);
-  assert.match(panel.text(), /不在发布包里/);
+  // 并回主包后不再有"DEV / 不在发布包里"的字样，改为说清两件事：这是调试工具、它默认关闭。
+  assert.match(panel.text(), /调试工具/);
+  assert.match(panel.text(), /默认关闭/);
+  assert.match(panel.text(), /全局前台覆盖/);
 
   const rows = rowsOf(panel);
   assert.deepEqual(rows.map((row) => row.key), ["status", "edge", "deliver", "page"]);
@@ -385,7 +386,8 @@ test("样式表按标记安装/替换/卸载；文案跟随 DSH 界面语言（�
 
   // 英文界面：面板整棵树都走英文，且不出现 key 原文。
   const english = renderPanel(createFakeService(), "en");
-  assert.match(english.text(), /Development debug panel \(DEV/);
+  assert.match(english.text(), /^Debug tools/);
+  assert.match(english.text(), /off by default/);
   assert.match(rowOf(english, "page").text, /Current page \/ foreground verdict:/);
   assert.equal(english.text().includes("panelTitle"), false);
   assert.equal(english.text().includes("diagStatus"), false);

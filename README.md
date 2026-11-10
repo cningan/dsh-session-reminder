@@ -22,7 +22,7 @@ The shell implementation is an external integration boundary and is not included
 
 ## Package entry points
 
-- The package name is @cningan/dsh-session-status, version 0.4.0. It is published to the npm registry under that name (`publishConfig.access: public`) and declares `engines.dsh`.
+- The package name is @cningan/dsh-session-status, version 0.5.0. It is published to the npm registry under that name (`publishConfig.access: public`) and declares `engines.dsh`.
 - lib/index.js is the Host half: it injects `webServer`, owns the diagnostics sink (`/plugins/dsh-session-status/diagnostics`), and appends JSONL records under the profile's `.dsh-session-status/` directory. It never decides when a reminder is due.
 - lib/client.js is the loader-ready Client bundle: it registers the session notification capability and the test service `sessionStatusTest` (`ctx.provide`). It ships **no settings UI at all** — no slot, no stylesheet, no React — and its Client dependency list therefore has no `slots` (`locale` stays: it serves the reminder copy).
 
@@ -34,7 +34,7 @@ This repository is the maintained source location. A deployed profile is an exte
 
 ## Permission and checks
 
-The plugin has **no settings page section**; there is nothing to configure or press. Reminder text follows the DSH interface language through the official locale service. Browser notification permission is requested automatically when the first reminder actually needs to be delivered and the permission is still undecided (`default`): the request is asynchronous, so that first reminder is still recorded as "no channel" (`browser-default`) and later reminders take the browser channel once the permission is answered. If a native workbench bridge is present, the browser permission is never needed. To exercise the delivery path on demand, use the separate in-repo debug panel (`dev/debug-panel/`), whose probe (`deliverAdHoc`) shares the delivery instance, the key counter, the diagnostics and the foreground veto with automatic reminders.
+The plugin has **no settings page section**; there is nothing to configure for reminders. It ships a **debug panel inside its own plugin page** (Plugins → this plugin → detail page) that is **off by default**: while the master switch is off the service rejects every test action, so normal use is unaffected. Once enabled it can force foreground/background (a **global** override: with it, a real session stop pops even though the page is in the foreground) and simulate a reminder for each of the 11 stop reasons. Reminder text follows the DSH interface language through the official locale service. Browser notification permission is requested automatically when the first reminder actually needs to be delivered and the permission is still undecided (`default`): the request is asynchronous, so that first reminder is still recorded as "no channel" (`browser-default`) and later reminders take the browser channel once the permission is answered. If a native workbench bridge is present, the browser permission is never needed. To exercise the delivery path on demand, use the separate in-repo debug panel (`dev/debug-panel/`), whose probe (`deliverAdHoc`) shares the delivery instance, the key counter, the diagnostics and the foreground veto with automatic reminders.
 
 The `desktop` profile has the plugin installed through the official channel from a local tarball. The automatic session-stop path still requires an end-to-end check in a separate DSH session; do not treat the test-service probe or unit tests as that validation.
 
@@ -54,7 +54,7 @@ There is a **single build**. Test capability does not live in this plugin ([ADR-
 
 - `npm run build:client` — the only bundle: it carries no test UI and no settings UI, but it does register the test service `sessionStatusTest` (`ctx.provide`), the hook the separate `dev/` debug plugin injects
 - `npm test` — its `pretest` builds that bundle first; the suite then runs against it
-- `npm run check:production` — builds and asserts the artifact's surface: no debug traces and no settings UI (no `dshss-settings` class, no `settings.section` registration), and the test-service hook present (a positive control)
+- `npm run check:production` — builds and asserts the artifact's surface: removed debug/settings capabilities never come back, the expected hooks are present, and the debug switch starts **off**; no settings UI (no `dshss-settings` class, no `settings.section` registration), and the test-service hook present (a positive control)
 - `npm run diagnose` — reads `<profile>/.dsh-session-status/diagnostics.jsonl` and prints a verdict with an exit code; it consumes the same diagnostics contract as the sender and the Host gate, and only interprets the events it knows
 - `prepack` builds the same bundle, so tarball installs never ship test code
 

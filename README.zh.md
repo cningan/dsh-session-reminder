@@ -22,7 +22,7 @@ Shell 桥的实现属于外部集成边界，不包含在本仓库中。
 
 ## 包入口
 
-- 包名为 @cningan/dsh-session-status，版本 0.4.0；已以该名字发布到 npm registry（`publishConfig.access: public`），并声明 `engines.dsh`。
+- 包名为 @cningan/dsh-session-status，版本 0.5.0；已以该名字发布到 npm registry（`publishConfig.access: public`），并声明 `engines.dsh`。
 - lib/index.js 是 Host 半边：注入 `webServer`，持有诊断落盘端点（`/plugins/dsh-session-status/diagnostics`），把 JSONL 记录追加到 profile 下的 `.dsh-session-status/` 目录；它不参与"何时该提醒"的判定。
 - lib/client.js 是可由 DSH loader 加载的 Client bundle：注册会话通知能力与测试服务 `sessionStatusTest`（`ctx.provide`）。它**不含任何设置 UI**——不注册 slot、不装样式表、不取 React——因此 Client 依赖清单里没有 `slots`（`locale` 保留：它服务的是通知文案）。
 
@@ -34,7 +34,7 @@ Shell 桥的实现属于外部集成边界，不包含在本仓库中。
 
 ## 权限与验证
 
-插件**没有设置页 section**，也没有任何可配置或可按的东西。提醒文案经官方 locale 服务跟随 DSH 界面语言。浏览器通知权限在**首次真要投递而权限仍未决定（`default`）**时自动请求：请求是异步的，因此那一条提醒仍如实记为「无可用渠道」（`browser-default`），权限答复之后后续提醒才走浏览器渠道。有可用原生桥时完全不需要浏览器权限。想按需验证投递路径，只能经仓库内独立的 `dev/debug-panel/`：它的探针 `deliverAdHoc` 与自动提醒共用同一个投递实例、键序号计数器、诊断与前台否决。
+插件**没有设置页 section**，也没有任何可配置或可按的东西（提醒不需要配置）。它带一个**调试面板，挂在插件自己的详情页**（插件 → 本插件 → 详情页），**默认关闭**：总开关关着时服务侧拒绝一切测试动作，正式使用不受影响。打开后可强制前台/失焦（**全局**覆盖：开启后真实会话结束也会弹，即使页面就在前台），并可按 11 条停止原因逐条模拟提醒文案。提醒文案经官方 locale 服务跟随 DSH 界面语言。浏览器通知权限在**首次真要投递而权限仍未决定（`default`）**时自动请求：请求是异步的，因此那一条提醒仍如实记为「无可用渠道」（`browser-default`），权限答复之后后续提醒才走浏览器渠道。有可用原生桥时完全不需要浏览器权限。想按需验证投递路径，只能经仓库内独立的 `dev/debug-panel/`：它的探针 `deliverAdHoc` 与自动提醒共用同一个投递实例、键序号计数器、诊断与前台否决。
 
 `desktop` Profile 现已经官方渠道、以本地压缩包安装该插件。自动会话停止通知仍需在独立 DSH 会话中做端到端验证；测试服务探针和单元测试不能替代该验证。
 

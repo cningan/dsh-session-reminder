@@ -30,7 +30,7 @@ import { SAMPLE_REASONS, TEST_SERVICE_NAME } from "../lib/client/test-service.mj
 const clientBundle = await readFile(new URL("../lib/client.js", import.meta.url), "utf8");
 
 /** 测试服务的面：契约约定的四个方法，一个不多。 */
-const SERVICE_KEYS = ["setForegroundOverride", "getSnapshot", "subscribe", "deliverAdHoc", "deliverSample"];
+const SERVICE_KEYS = ["setForegroundOverride", "getSnapshot", "subscribe", "deliverAdHoc", "deliverSample", "setDevToolsEnabled"];
 /** 产物里不得出现的调试 / 设置界面痕迹（与 scripts/check-production-bundle.mjs 同一张表）。 */
 const DEBUG_MARKERS = [
   "诊断·",
@@ -61,7 +61,7 @@ function observable(initial) {
 }
 
 /** 最小假浏览器：官方源的替身 + 假 fetch（上报请求体原样收下）+ 假 provide（无 slots）。 */
-function launch(source, { focused = false, workspace, eventWindow, dshVersion } = {}) {
+function launch(source, { focused = false, workspace, eventWindow, dshVersion, devTools = false } = {}) {
   const reports = [];
   const notices = [];
   const provided = {};
@@ -168,6 +168,8 @@ function launch(source, { focused = false, workspace, eventWindow, dshVersion } 
   window.plugin.apply(ctx);
 
   const service = provided[TEST_SERVICE_NAME];
+  // 调试工具默认关闭：需要测试动作的用例显式打开（默认关闭本身另有直测）。
+  if (devTools) service.setDevToolsEnabled(true);
   return {
     service,
     provided,
@@ -205,6 +207,30 @@ test("测试服务的键集合固定且不越界", () => {
   assert.deepEqual(Object.keys(harness.provided), [TEST_SERVICE_NAME]);
 });
 
+test("调试工具默认关闭：测试动作在服务侧就被拒绝，正式使用不受影响", () => {
+  const harness = launch(clientBundle, { focused: true });
+
+  assert.equal(harness.service.getSnapshot().devTools.enabled, false, "并回主包后默认必须是关闭的");
+  // 关着时三个写入口全部无效：不改事实、不投递、不写记录。
+  assert.equal(harness.service.setForegroundOverride("background"), "auto");
+  assert.equal(harness.service.deliverAdHoc("test"), false);
+  assert.equal(harness.service.deliverSample("completed"), false);
+  assert.equal(harness.notices.length, 0);
+  assert.equal(harness.payloads("deliver").length, 0, "关着时不应留下任何投递记录");
+  assert.equal(harness.service.getSnapshot().page.background, false, "前台判定不应被改动");
+
+  // 打开之后才生效。
+  assert.equal(harness.service.setDevToolsEnabled(true), true);
+  assert.equal(harness.service.setForegroundOverride("background"), "background");
+  assert.equal(harness.service.deliverAdHoc("test"), true);
+  assert.equal(harness.notices.length, 1);
+
+  // 再关掉：覆盖随总开关一起复位（避免「关掉了却还在覆盖」）。
+  assert.equal(harness.service.setDevToolsEnabled(false), false);
+  assert.equal(harness.service.getSnapshot().foregroundOverride, "auto");
+  assert.equal(harness.service.deliverAdHoc("test"), false);
+});
+
 test("插件经 ctx.provide 注册测试服务，服务随插件 fiber 释放", () => {
   const harness = launch(clientBundle);
 
@@ -228,7 +254,7 @@ test("产物没有调试与设置 UI 的痕迹，但带着测试服务 Hook（�
 
 test("前台覆盖三态：auto 跟随宿主、foreground 强制抑制、background 强制放行", () => {
   // 宿主说「页面在前台」（聚焦且可见）：auto 与 foreground 都该抑制。
-  const foreground = launch(clientBundle, { focused: true });
+  const foreground = launch(clientBundle, { focused: true, devTools: true });
   assert.equal(foreground.service.getSnapshot().page.background, false);
 
   foreground.stop();
@@ -257,7 +283,7 @@ test("前台覆盖三态：auto 跟随宿主、foreground 强制抑制、backgro
   assert.equal(delivered.background, true);
 
   // 反向：宿主说「页面在后台」（失焦）时，foreground 覆盖能强制抑制——两个方向都可验证。
-  const background = launch(clientBundle, { focused: false });
+  const background = launch(clientBundle, { focused: false, devTools: true });
   assert.equal(background.service.getSnapshot().page.background, true);
   assert.equal(background.service.setForegroundOverride("foreground"), "foreground");
   assert.equal(background.service.getSnapshot().page.background, false);
@@ -273,7 +299,7 @@ test("前台覆盖三态：auto 跟随宿主、foreground 强制抑制、backgro
 });
 
 test("setForegroundOverride 的闸门：只认三态，其余一律按 auto", () => {
-  const harness = launch(clientBundle, { focused: true });
+  const harness = launch(clientBundle, { focused: true, devTools: true });
 
   assert.equal(harness.service.setForegroundOverride("background"), "background");
   assert.equal(harness.service.setForegroundOverride("FOREGROUND"), "auto");
@@ -285,7 +311,7 @@ test("setForegroundOverride 的闸门：只认三态，其余一律按 auto", ()
 });
 
 test("deliverAdHoc 与自动提醒共用同一个投递路径与键序号计数器", () => {
-  const harness = launch(clientBundle, { focused: false });
+  const harness = launch(clientBundle, { focused: false, devTools: true });
 
   // 后台：临时投递照常到达，键形与既有 JSONL 一致（前缀 + kind + 序号）。
   assert.equal(harness.service.deliverAdHoc("test"), true);
@@ -311,7 +337,7 @@ test("deliverAdHoc 与自动提醒共用同一个投递路径与键序号计数�
 });
 
 test("deliverAdHoc 服从前台抑制：抑制时返回 false，但仍留下可区分的投递记录", () => {
-  const harness = launch(clientBundle, { focused: true });
+  const harness = launch(clientBundle, { focused: true, devTools: true });
 
   assert.equal(harness.service.deliverAdHoc("test"), false);
   assert.equal(harness.notices.length, 0);
@@ -327,7 +353,7 @@ test("deliverAdHoc 服从前台抑制：抑制时返回 false，但仍留下可�
 });
 
 test("deliverSample：按原因模拟，文案与真实停止逐字符相同", () => {
-  const harness = launch(clientBundle, { focused: false });
+  const harness = launch(clientBundle, { focused: false, devTools: true });
   const t = (key) => dictionaries.en[key];
   const expected = [
     ["completed", "Session run completed", "Sample session"],
@@ -365,14 +391,14 @@ test("deliverSample：按原因模拟，文案与真实停止逐字符相同", (
   assert.deepEqual(payloads.map((payload) => payload.kind), expected.map(([reason]) => (reason === "completed" ? "completed" : "interrupted")));
 
   // 同样服从前台抑制（与自动提醒共用投递路径）。
-  const focused = launch(clientBundle, { focused: true });
+  const focused = launch(clientBundle, { focused: true, devTools: true });
   assert.equal(focused.service.deliverSample("completed"), false);
   assert.equal(focused.notices.length, 0);
   assert.equal(focused.payloads("deliver").at(-1).channel, "suppressed-foreground");
 });
 
 test("subscribe：状态变化通知一次，退订后不再通知", () => {
-  const harness = launch(clientBundle, { focused: true });
+  const harness = launch(clientBundle, { focused: true, devTools: true });
   const calls = [];
   const off = harness.service.subscribe(() => calls.push(harness.service.getSnapshot().foregroundOverride));
 

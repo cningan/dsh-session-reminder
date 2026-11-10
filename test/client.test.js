@@ -197,6 +197,12 @@ function createHarness({
     bridgeAttempts,
     permissionRequests,
     service: provided.sessionStatusTest,
+    // 调试工具默认关闭（另有直测：默认关闭时测试动作一律被拒绝）。这一组用例测的是
+    // 投递路径本身，所以显式打开——打开后才等价于「调试工具可用」的状态。
+    setDevTools: (enabled = true) => {
+      provided.sessionStatusTest?.setDevToolsEnabled(enabled);
+      return provided.sessionStatusTest;
+    },
     setStatuses: (next) => sessionStatus.set(next),
     setRows: (byId) => list.set({ byId }),
     /** 某一类诊断事件的 payload 列表（读方落盘的记录形状）。 */
@@ -384,6 +390,7 @@ test("选中会话的原因来源端到端：turn/end 事件窗口 → 官方快
 test("前台否决：自动提醒与测试服务的临时投递都不投递，但都写一条 suppressed-foreground 记录", () => {
   // 后台（默认失焦）：测试投递照常到达。
   const background = createHarness({ currentId: "current", statuses: new Map([running("current")]) });
+  background.setDevTools();
   assert.equal(background.service.deliverAdHoc("test"), true);
   assert.equal(background.notices.length, 1);
   assert.equal(background.notices[0].title, "DSH reminder test");
@@ -397,6 +404,7 @@ test("前台否决：自动提醒与测试服务的临时投递都不投递，�
     focused: true,
     statuses: new Map([running("current")])
   });
+  foreground.setDevTools();
 
   // 自动提醒：前台不投递，但仍记一条可区分的投递记录（读方据此区分「按设计静默」与「投递故障」）。
   foreground.setStatuses(new Map([stopped("current")]));
@@ -428,6 +436,7 @@ test("渠道回退：两个原生桥都抛错时退回浏览器通知，权限�
   // 有原生桥时能力就是 native（不读浏览器权限）。
   assert.equal(harness.service.getSnapshot().notificationPermission, "native");
 
+  harness.setDevTools();
   assert.equal(harness.service.deliverAdHoc("test"), true);
   // 两个桥都被尝试过（顺序是投递层的契约），最后用浏览器通知投了出去。
   assert.deepEqual(harness.bridgeAttempts.map((attempt) => attempt.channel), ["shell", "webview"]);

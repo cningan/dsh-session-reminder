@@ -1,6 +1,0 @@
-{
-  "meta": {
-    "title": "Session reminders · debug panel",
-    "description": "Development only: simulate a reminder per stop reason and force foreground/background to verify the wording and the foreground suppression rule. Never part of the release package."
-  }
-}
