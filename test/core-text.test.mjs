@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { dictionaries, pendingKind, terminalText } from "../lib/core/text.mjs";
+import { dictionaries, pendingKind, terminalBody, terminalHeadline } from "../lib/core/text.mjs";
 
 // 用字典本身当 t：这里测的是「语义 → 文案」映射，不需要 DSH 的 locale 服务。
 function makeT(lang) {
@@ -13,33 +13,50 @@ function makeT(lang) {
   };
 }
 
-test("maps every terminal reason to its own localized template", () => {
+test("每个终止原因都有自己的标题，且彼此不同——这是「提示不再都一样」的那一半", () => {
   const t = makeT("zh");
-  assert.equal(terminalText({ reason: "completed", detail: "" }, t), "");
-  assert.equal(terminalText({ reason: "interrupted", detail: "" }, t), "");
-  assert.equal(terminalText({ reason: "blocked", detail: "" }, t), t("blocked"));
-  assert.equal(terminalText({ reason: "max-tokens", detail: "" }, t), t("maxTokens"));
-  assert.equal(terminalText({ reason: "aborted-parent", detail: "" }, t), t("abortedByParent"));
-  assert.equal(terminalText({ reason: "aborted-hook", detail: "policy" }, t), t("abortedByHook", { reason: "policy" }));
-  assert.equal(terminalText({ reason: "error", detail: "MODEL_ERR" }, t), t("turnError", { reason: "MODEL_ERR" }));
-  assert.equal(terminalText({ reason: "agent-error", detail: "boom" }, t), t("agentError", { reason: "boom" }));
-  assert.equal(
-    terminalText({ reason: "prompt-error", detail: "EOP: failed" }, t),
-    t("promptError", { reason: "EOP: failed" })
-  );
-  assert.equal(terminalText({ reason: "session-open-error", detail: "" }, t), t("openErrorGeneric"));
-  assert.equal(
-    terminalText({ reason: "session-open-error", detail: "ENOENT" }, t),
-    t("openError", { reason: "ENOENT" })
-  );
+  const reasons = [
+    "completed", "interrupted", "process-interrupted", "blocked", "max-tokens",
+    "error", "agent-error", "prompt-error", "session-open-error", "aborted-parent", "aborted-hook"
+  ];
+  const headlines = reasons.map((reason) => terminalHeadline(reason, t));
+
+  for (const [index, headline] of headlines.entries()) {
+    assert.equal(typeof headline, "string");
+    assert.notEqual(headline, "", `${reasons[index]} 应有标题`);
+  }
+  // 除「未知原因」的兜底外，每个原因都必须给出**不同**的一句：共用一个标题就等于没修。
+  const distinct = new Set(headlines);
+  assert.equal(distinct.size, reasons.length, "每个原因的标题都应不同");
+  // 未知 reason 回落到通用兜底，而不是编一个原因。
+  assert.equal(terminalHeadline("something-new", t), t("interrupted"));
 });
 
-test("falls back to the generic stop text when a detail-carrying reason has none", () => {
+test("正文只补充标题没说的细节：错误码/消息与扩展原因，其余不重复", () => {
+  const t = makeT("zh");
+  assert.equal(terminalBody({ reason: "error", detail: "MODEL_ERR: quota exhausted" }, t), "MODEL_ERR: quota exhausted");
+  assert.equal(terminalBody({ reason: "agent-error", detail: "boom" }, t), "boom");
+  assert.equal(terminalBody({ reason: "prompt-error", detail: "EOP: failed" }, t), "EOP: failed");
+  assert.equal(terminalBody({ reason: "aborted-hook", detail: "policy" }, t), "policy");
+  assert.equal(terminalBody({ reason: "session-open-error", detail: "ENOENT" }, t), "ENOENT");
+
+  // 标题已经说清的：正文留空，调用方因此不再拼分隔符（不会出现「本轮被阻止：本轮被阻止」）。
+  for (const reason of ["completed", "blocked", "max-tokens", "aborted-parent", "process-interrupted"]) {
+    assert.equal(terminalBody({ reason, detail: "" }, t), "", `${reason} 的正文应为空`);
+  }
+
+  // 通用停止：唯一能说的就是「原因不可知」。
+  assert.equal(terminalBody({ reason: "interrupted", detail: "" }, t), t("unknownStopped"));
+});
+
+test("带 detail 的原因若 detail 为空，退回「原因不可知」而不是编一个细节", () => {
   for (const lang of ["zh", "en"]) {
     const t = makeT(lang);
     const unknown = t("unknownStopped");
-    assert.equal(terminalText({ reason: "error", detail: "" }, t), t("turnError", { reason: unknown }));
-    assert.equal(terminalText({ reason: "aborted-hook", detail: "" }, t), t("abortedByHook", { reason: unknown }));
+    for (const reason of ["error", "agent-error", "prompt-error", "aborted-hook", "session-open-error"]) {
+      assert.equal(terminalBody({ reason, detail: "" }, t), unknown, `${reason}（${lang}）应退回通用说明`);
+      assert.equal(terminalBody({ reason, detail: "   " }, t), unknown, `${reason}（${lang}）空白 detail 也算空`);
+    }
   }
 });
 
@@ -83,6 +100,4 @@ test("pending kinds map to their own words and fall back to question", () => {
 test("the localized templates still carry their placeholders", () => {
   assert.match(dictionaries.zh.waitTitle, /\{kind\}/);
   assert.match(dictionaries.en.waitTitle, /\{kind\}/);
-  assert.match(dictionaries.zh.turnError, /\{reason\}/);
-  assert.match(dictionaries.en.abortedByHook, /\{reason\}/);
 });

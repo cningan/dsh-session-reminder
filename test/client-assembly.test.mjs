@@ -60,6 +60,20 @@ test("inject 与 package.json 的 dsh.client.inject 由同一张依赖表派生�
   assert.deepEqual(unique(providers), manifest.dsh.client.inject);
 });
 
+test("依赖表把每个本地服务钉到已核实的官方提供方包", () => {
+  // 这一张表是排序激活的唯一定义处；包名错了不会立刻炸，只会让激活顺序失去依据。
+  // `sessions` 曾经写的是一个**不存在**的包（`@deepseek-ai/dsh-client-runtime`）：
+  // DSH 0.2.2-rc.1 的 app.asar 里没有任何包叫这个名字，真正提供 `sessions` 的是
+  // `@deepseek-ai/dsh-api-session-controller`（`rootCtx.reflect.provide("sessions", …)`）。
+  // 逐项钉死，避免下一个版本再漂成猜测。见 .scratch/session-status/issues/14。
+  assert.deepEqual(Object.fromEntries(CLIENT_DEPENDENCIES.map(({ service, provider }) => [service, provider])), {
+    locale: "@deepseek-ai/dsh-client-locale",
+    sessions: "@deepseek-ai/dsh-api-session-controller",
+    connection: "@deepseek-ai/dsh-client-connection",
+    uiSession: "@deepseek-ai/dsh-client-ui-session"
+  });
+});
+
 /** 最小假浏览器：官方源替身，只为把 factory 跑起来（插件没有 UI，不应取任何模块）。 */
 function launch(source) {
   let loaded;

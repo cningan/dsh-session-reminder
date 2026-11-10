@@ -115,6 +115,8 @@ test("falls back to the WebView bridge when the shell bridge throws", () => {
   assert.deepEqual(harness.deliveries(), [{
     key: "terminal:s1:1",
     kind: "terminal",
+    // 停止原因随投递落盘（notice 没带就是 null）：文案是否对得上因此可事后审计。
+    reason: null,
     sessionId: "s1",
     channel: "native-bridge",
     delivered: true,

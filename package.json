@@ -1,9 +1,11 @@
 {
   "name": "@cningan/dsh-session-status",
   "description": "Attention reminders for waits and stop outcomes across running sessions, delivered by Web or workbench channels.",
-  "version": "0.3.1",
-  "private": true,
+  "version": "0.4.0",
   "type": "module",
+  "engines": {
+    "dsh": ">=0.2.0 <0.3.0"
+  },
   "scripts": {
     "build:client": "node scripts/build-client.mjs",
     "prepack": "node scripts/build-client.mjs",
@@ -42,11 +44,29 @@
       "platform": "web",
       "inject": [
         "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-api-session-controller",
         "@deepseek-ai/dsh-client-connection",
         "@deepseek-ai/dsh-client-ui-session"
       ]
     }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cningan/dsh-session-status.git"
+  },
+  "homepage": "https://github.com/cningan/dsh-session-status#readme",
+  "bugs": {
+    "url": "https://github.com/cningan/dsh-session-status/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "notifications",
+    "sessions"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "license": "MIT",
   "devDependencies": {

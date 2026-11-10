@@ -31,7 +31,9 @@ test("maps every known failure kind to its own reason", () => {
 
 test("keeps an unknown abort generic instead of guessing completion", () => {
   assert.equal(classifyTurnEnd({ kind: "aborted" }).reason, "interrupted");
-  assert.equal(classifyTurnEnd({ kind: "interrupted" }).reason, "interrupted");
+  // 上游 `interrupted` 是**有含义**的原因（DSH 进程在回合结束前退出），不是「原因未知」：
+  // 两者共用 `interrupted` 会把已知原因说成未知，用户看到的文案就不再说明发生了什么。
+  assert.equal(classifyTurnEnd({ kind: "interrupted" }).reason, "process-interrupted");
   assert.equal(classifyTurnEnd({ kind: "forked" }).reason, "interrupted");
   assert.equal(classifyTurnEnd({ kind: "something-new" }).reason, "interrupted");
 });

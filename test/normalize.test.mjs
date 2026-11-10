@@ -21,9 +21,11 @@ import { fileURLToPath } from "node:url";
 
 import {
   detailShapeOf,
+  EVENT_WINDOW_SHAPES,
   isSubagentSession,
   normalizeCurrent,
   normalizeSessions,
+  readEventWindow,
   readPageState,
   titleOf
 } from "../lib/client/normalize.mjs";
@@ -281,4 +283,98 @@ test("前台判定在 lib/ 下只有一处实现：可见性/焦点只由归一�
   // 装配层（投递判定）与测试服务（只读快照）都只能消费归一化的产出：任一处再写一次
   // 等价表达式，这条断言就会失败（设置界面已移除，它当年是第二个消费方）。
   assert.deepEqual(readers, ["client/normalize.mjs"], "页面可见性/焦点只允许在 client/normalize 里读取");
+});
+
+// ── ⑥ 事件窗口（停止原因的唯一来源） ─────────────────────────────────────────
+
+/** 一条 `SessionEvent`：窗口条目里 `entry.event` 就是它。 */
+function sessionEvent(seq, type, data) {
+  return { seq, type, data };
+}
+
+test("事件窗口：DSH 0.2 的 { entries } 形状（条目是 { type, event } 包装）读出最后一条 turn/end", () => {
+  const snapshot = {
+    entries: [
+      { type: "append", event: sessionEvent(7, "step/start", {}) },
+      { type: "append", event: sessionEvent(8, "turn/end", { reason: { kind: "completed" } }) }
+    ],
+    hasMore: false,
+    revision: 3,
+    change: { kind: "append", entries: [] }
+  };
+
+  assert.deepEqual(readEventWindow(snapshot), {
+    shape: EVENT_WINDOW_SHAPES.ENTRIES,
+    maxSeq: 8,
+    turnEnd: { kind: "completed" }
+  });
+});
+
+test("事件窗口：水位之下的记事件不参与本轮——重复发布同一批条目不会重复消费", () => {
+  const snapshot = {
+    entries: [{ type: "append", event: sessionEvent(8, "turn/end", { reason: { kind: "completed" } }) }]
+  };
+
+  // 同一份快照读第二遍（水位已经是 8）：只剩「水位没动」，原因不再被采纳。
+  assert.deepEqual(readEventWindow(snapshot, 8), {
+    shape: EVENT_WINDOW_SHAPES.ENTRIES,
+    maxSeq: 8,
+    turnEnd: void 0
+  });
+});
+
+test("事件窗口：按 seq 升序消费，最后一条 turn/end 才是本轮的结论", () => {
+  // 旧形状的 `events` 不保证有序；乱序喂进来也必须按 seq 得结论（seq 9 才是最后一条）。
+  const snapshot = {
+    entries: [
+      { type: "append", event: sessionEvent(9, "turn/end", { reason: { kind: "error", error: { code: "E_BOOM" } } }) },
+      { type: "append", event: sessionEvent(6, "turn/end", { reason: { kind: "completed" } }) },
+      { type: "append", event: sessionEvent(7, "step/end", {}) }
+    ]
+  };
+
+  const window = readEventWindow(snapshot, 5);
+  assert.equal(window.maxSeq, 9);
+  assert.equal(window.turnEnd.kind, "error");
+});
+
+test("事件窗口：旧形状 { events, target } 仍然可读（target 视作末尾那一条）", () => {
+  const snapshot = {
+    events: [sessionEvent(3, "step/start", {})],
+    target: sessionEvent(4, "turn/end", { reason: { kind: "aborted", reason: { kind: "parent" } } })
+  };
+
+  assert.deepEqual(readEventWindow(snapshot), {
+    shape: EVENT_WINDOW_SHAPES.EVENTS,
+    maxSeq: 4,
+    turnEnd: { kind: "aborted", reason: { kind: "parent" } }
+  });
+});
+
+test("事件窗口：两份官方形状都不符时如实报 unknown——不猜原因、不动水位", () => {
+  for (const snapshot of [void 0, null, {}, "entries", 42, { entries: "not-an-array" }]) {
+    assert.deepEqual(readEventWindow(snapshot, 5), {
+      shape: EVENT_WINDOW_SHAPES.UNKNOWN,
+      maxSeq: 5,
+      turnEnd: void 0
+    }, `形状 ${JSON.stringify(snapshot)} 应报 unknown`);
+  }
+});
+
+test("事件窗口：读不懂的条目被跳过，不会抬水位也不会编原因", () => {
+  const snapshot = {
+    entries: [
+      null,
+      42,
+      // `seq` 是字符串：不是可消费的事件。
+      { type: "append", event: { seq: "9", type: "turn/end", data: { reason: { kind: "completed" } } } },
+      { type: "append", event: sessionEvent(10, "step/end", {}) }
+    ]
+  };
+
+  assert.deepEqual(readEventWindow(snapshot, 4), {
+    shape: EVENT_WINDOW_SHAPES.ENTRIES,
+    maxSeq: 10,
+    turnEnd: void 0
+  });
 });

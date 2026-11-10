@@ -22,11 +22,13 @@ Shell 桥的实现属于外部集成边界，不包含在本仓库中。
 
 ## 包入口
 
-- 包名为 @cningan/dsh-session-status，版本 0.3.1；manifest 将其标记为 private。
+- 包名为 @cningan/dsh-session-status，版本 0.4.0；已以该名字发布到 npm registry（`publishConfig.access: public`），并声明 `engines.dsh`。
 - lib/index.js 是 Host 半边：注入 `webServer`，持有诊断落盘端点（`/plugins/dsh-session-status/diagnostics`），把 JSONL 记录追加到 profile 下的 `.dsh-session-status/` 目录；它不参与"何时该提醒"的判定。
 - lib/client.js 是可由 DSH loader 加载的 Client bundle：注册会话通知能力与测试服务 `sessionStatusTest`（`ctx.provide`）。它**不含任何设置 UI**——不注册 slot、不装样式表、不取 React——因此 Client 依赖清单里没有 `slots`（`locale` 保留：它服务的是通知文案）。
 
-包声明 `dsh.bundle.patch`（`cordis.patch.yml`），官方渠道才会把它识别为 bundle：用 `plugin_manager` 的 `install_bundle`（或客户端「添加插件」）安装，自带 patch 会挂载本包自己的条目（`id: session-status`、`name: '@cningan/dsh-session-status'`）。安装输入用本地 `.tgz`，内容解包进 profile；不要用目录或 `link:` 形式——那只建 junction，`@deepseek-ai/*` 无法解析。
+包声明 `dsh.bundle.patch`（`cordis.patch.yml`），官方渠道才会把它识别为 bundle：用 `plugin_manager` 的 `install_bundle`（或客户端「添加插件」）安装，自带 patch 会挂载本包自己的条目（`id: session-status`、`name: '@cningan/dsh-session-status'`）。安装输入用 **npm registry 的包名**——只有这种形式才能被 DSH 插件页「检查更新」识别并原地升级（本地 `.tgz`、GitHub 链接、`github:` spec 一律报「不可更新」，只能卸载重装）。本地 `.tgz` 仍可用于离线验证；不要用目录或 `link:` 形式——那只建 junction，`@deepseek-ai/*` 无法解析。
+
+`engines.dsh` 是 `>=0.2.0 <0.3.0`：DSH 在安装时与启动时各校验一次（`semver.satisfies(runtime, range, { includePrerelease: true })`），不满足就以 `incompatible-version` 拒绝（Profile 可在自己的 `compatibility.json` 里豁免）。这道护栏是有意的——0.3.1 在 0.2.2 上能静默加载然后出错，大声拒绝比悄悄失效好。
 
 本仓库是维护源码位置。已部署的 Profile 是外部运行/组合目标；本仓库不手写 Profile 文件（不改 `package.json` 或 `dsh.profile.bundles`）。
 
@@ -42,7 +44,7 @@ Client 半边把它观察到的事实（装载快照、会话/状态数据源形
 
 ## 兼容性
 
-当前 bundle 使用 uiSession.sessionStatus、connection.state、当前 binding 的 eventSource 和官方 SessionSnapshot 错误字段，不依赖未声明的 nodes。Host 的 SessionEventWindow schema 使用 events/target；但 Client binding 的窗口形状与生命周期尚未独立核实。事件不可用或形状不符时退回通用提醒。详见 [docs/compatibility.md](docs/compatibility.md)。
+当前 bundle 使用 uiSession.sessionStatus、connection.state、当前 binding 的 eventSource、官方 SessionSnapshot 错误字段，以及（点通知打开会话时）可选的官方 `uiWorkspace` 服务，不依赖未声明的 nodes。事件窗口**两种官方形状都认**：DSH 0.2+ 的 `{ entries, hasMore, revision, change }`（条目是 `{ type, event }`）与更早的 `{ events, target }`；`turn/end` 的原因按到达的那一种分类，两种都不符时退回通用提醒并留一条 `source-shape` 记录。0.2.2 的契约细节见 [docs/compatibility.md](docs/compatibility.md)。
 
 ## 构建
 

@@ -59,10 +59,11 @@ function observable(initial) {
 }
 
 /** 最小假浏览器：官方源的替身 + 假 fetch（上报请求体原样收下）+ 假 provide（无 slots）。 */
-function launch(source, { focused = false } = {}) {
+function launch(source, { focused = false, workspace, eventWindow, dshVersion } = {}) {
   const reports = [];
   const notices = [];
   const provided = {};
+  const opened = [];
 
   class MockNotification {
     static permission = "granted";
@@ -97,10 +98,15 @@ function launch(source, { focused = false } = {}) {
     removeEventListener() {}
   };
 
+  // 官方 boot 清单：DSH 版本的事实来源（`__DSH_BOOT__.release.version`）。
+  if (dshVersion !== void 0) window.__DSH_BOOT__ = { release: { version: dshVersion } };
+
   const list = observable({ byId: { current: { title: "Current session" } } });
   const sessionStatus = observable(new Map([["current", { running: false, completionUnread: false }]]));
   const current = observable({ key: "current" });
   const connection = observable("connected");
+  // 选中会话的详情面：本文件不关心它，但绑定对象必须交出 getSnapshot/subscribe。
+  const sessionFace = observable({});
 
   let registered;
   const translate = (key, params) => {
@@ -111,7 +117,14 @@ function launch(source, { focused = false } = {}) {
   };
 
   const ctx = {
-    sessions: { list, binding: () => void 0, open() {} },
+    sessions: {
+      list,
+      // 绑定只对「选中会话」成立：DSH 里 binding 借出已保留的会话作用域，未保留就没有。
+      binding: () => (eventWindow === void 0
+        ? void 0
+        : { eventSource: eventWindow, session: sessionFace }),
+      open() {}
+    },
     uiSession: { sessionStatus, adapter: { current } },
     connection: { state: connection },
     locale: {
@@ -126,6 +139,10 @@ function launch(source, { focused = false } = {}) {
     provide(name, value) {
       provided[name] = value;
       return () => { delete provided[name]; };
+    },
+    // 可选服务解析：插件用 `ctx.get("uiWorkspace")` 取「打开会话」的入口，不写进 inject。
+    get(name) {
+      return name === "uiWorkspace" ? workspace : void 0;
     }
   };
 
@@ -151,11 +168,17 @@ function launch(source, { focused = false } = {}) {
     provided,
     reports,
     notices,
+    opened,
+    eventWindow,
     records: () => reports.map((report) => JSON.parse(report.body)),
     payloads: (event) => reports
       .map((report) => JSON.parse(report.body))
       .filter((record) => record.event === event)
       .map((record) => record.payload),
+    /** 只翻运行状态（不触发事件窗口）：用来把一次停止拆成「先跑、再出事件、最后停」。 */
+    setRunning: (running) => {
+      sessionStatus.set(new Map([["current", { running, completionUnread: false }]]));
+    },
     /** 触发一次「运行 → 停止」边沿（自动提醒的触发条件）。 */
     stop: () => {
       sessionStatus.set(new Map([["current", { running: true, completionUnread: false }]]));
@@ -321,7 +344,7 @@ test("subscribe：状态变化通知一次，退订后不再通知", () => {
 });
 
 test("真实产物的每条上报都满足诊断契约，且自带产生它的构建", () => {
-  const harness = launch(clientBundle, { focused: true });
+  const harness = launch(clientBundle, { focused: true, dshVersion: "0.2.2-rc.1" });
   harness.service.setForegroundOverride("background");
   harness.service.deliverAdHoc("test");
   harness.stop();
@@ -334,4 +357,80 @@ test("真实产物的每条上报都满足诊断契约，且自带产生它的�
   }
   // 只有一种构建：记录仍标注自己是哪台仪器（旧的 `debug` 取值留给历史记录）。
   assert.deepEqual([...new Set(records.map((record) => record.build))], [CLIENT_BUILDS.PRODUCTION]);
+
+  // 版本事实：装载快照带上 DSH 自身版本，兼容问题因此可事后判断而不是靠猜。
+  assert.equal(harness.payloads("attach")[0].dshVersion, "0.2.2-rc.1");
+  // 没有 boot 清单时如实报 null，不编一个版本号。
+  assert.equal(launch(clientBundle).payloads("attach")[0].dshVersion, null);
+});
+
+test("停止原因：DSH 0.2 的 entries 事件窗口能读出 turn/end，文案与上报都跟着原因走", () => {
+  const eventWindow = observable({
+    entries: [{ type: "append", event: { seq: 3, type: "turn/end", data: { reason: { kind: "completed" } } } }],
+    hasMore: false,
+    revision: 1,
+    change: { kind: "replace", entries: [] }
+  });
+  const harness = launch(clientBundle, { focused: false, eventWindow });
+
+  // ① 绑定会话时只抬水位：窗口里那条旧 turn/end（completed）不是这一轮的结果。
+  harness.stop();
+  assert.equal(harness.notices.length, 1, "停止应投递一条提醒");
+  assert.equal(harness.notices[0].title, "Session interrupted or stopped");
+  assert.match(harness.notices[0].options.body, /reason is unavailable/);
+  assert.equal(harness.payloads("deliver").at(-1).reason, "interrupted");
+
+  // ② 这一轮真正的新 turn/end（模型调用出错）到达之后再停：标题说「本轮出错」，
+  //    正文带错误码与消息——这正是过去永远只会显示「已中断或停止」的那一类。
+  harness.setRunning(true);
+  eventWindow.set({
+    entries: [
+      { type: "append", event: { seq: 3, type: "turn/end", data: { reason: { kind: "completed" } } } },
+      { type: "append", event: { seq: 9, type: "turn/end", data: { reason: { kind: "error", error: { code: "E_MODEL", message: "upstream 502" } } } } }
+    ],
+    hasMore: false,
+    revision: 2,
+    change: { kind: "append", entries: [] }
+  });
+  harness.setRunning(false);
+
+  assert.equal(harness.notices.length, 2);
+  assert.equal(harness.notices[1].title, "This run failed");
+  assert.equal(harness.notices[1].options.body, "Current session: E_MODEL: upstream 502");
+  assert.equal(harness.payloads("deliver").at(-1).reason, "error");
+
+  // ③ 正常完成必须说「已完成」，而不是又一条通用中断。
+  harness.setRunning(true);
+  eventWindow.set({
+    entries: [{ type: "append", event: { seq: 12, type: "turn/end", data: { reason: { kind: "completed" } } } }],
+    hasMore: false,
+    revision: 3,
+    change: { kind: "append", entries: [] }
+  });
+  harness.setRunning(false);
+
+  assert.equal(harness.notices.length, 3);
+  assert.equal(harness.notices[2].title, "Session run completed");
+  assert.equal(harness.notices[2].options.body, "Current session");
+  assert.equal(harness.payloads("deliver").at(-1).reason, "completed");
+  assert.equal(harness.payloads("deliver").at(-1).kind, "completed");
+});
+
+test("点击通知：优先用官方 uiWorkspace.openSession 打开会话", () => {
+  const workspace = { opened: [], openSession(id) { this.opened.push(id); } };
+  const harness = launch(clientBundle, { focused: false, workspace });
+  harness.stop();
+
+  assert.equal(harness.notices.length, 1);
+  harness.notices[0].onclick();
+  assert.deepEqual(workspace.opened, ["current"], "点击应调用 uiWorkspace.openSession");
+
+  // 装载快照如实记下「能不能跳转」这一能力位。
+  assert.equal(harness.payloads("attach")[0].hasWorkspaceOpen, true);
+
+  // 没有 ui-workspace 时不再调用已不存在的 sessions.open：点一下只是不跳转，不抛错。
+  const bare = launch(clientBundle, { focused: false });
+  bare.stop();
+  assert.equal(bare.payloads("attach")[0].hasWorkspaceOpen, false);
+  assert.doesNotThrow(() => bare.notices[0].onclick(), "缺少打开入口时点击通知不应抛错");
 });

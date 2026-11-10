@@ -22,11 +22,13 @@ The shell implementation is an external integration boundary and is not included
 
 ## Package entry points
 
-- The package name is @cningan/dsh-session-status, version 0.3.1. The package manifest marks it private.
+- The package name is @cningan/dsh-session-status, version 0.4.0. It is published to the npm registry under that name (`publishConfig.access: public`) and declares `engines.dsh`.
 - lib/index.js is the Host half: it injects `webServer`, owns the diagnostics sink (`/plugins/dsh-session-status/diagnostics`), and appends JSONL records under the profile's `.dsh-session-status/` directory. It never decides when a reminder is due.
 - lib/client.js is the loader-ready Client bundle: it registers the session notification capability and the test service `sessionStatusTest` (`ctx.provide`). It ships **no settings UI at all** — no slot, no stylesheet, no React — and its Client dependency list therefore has no `slots` (`locale` stays: it serves the reminder copy).
 
-The package declares `dsh.bundle.patch` (`cordis.patch.yml`), so the official channel can treat it as a bundle: install it with `plugin_manager` `install_bundle` (or Add plugin in the client) and that patch mounts the package's own entry (`id: session-status`, `name: '@cningan/dsh-session-status'`). Install from a local `.tgz`, whose contents are unpacked into the profile; do not use a directory or `link:` input, which only creates a junction and cannot resolve `@deepseek-ai/*`.
+The package declares `dsh.bundle.patch` (`cordis.patch.yml`), so the official channel can treat it as a bundle: install it with `plugin_manager` `install_bundle` (or Add plugin in the client) and that patch mounts the package's own entry (`id: session-status`, `name: '@cningan/dsh-session-status'`). Install it from the **npm registry by name** — that is the only form the DSH Plugins page can check for updates and upgrade in place (a local `.tgz`, a GitHub link or a `github:` spec is reported as not updatable, so it can only be removed and reinstalled). A local `.tgz` still works for offline verification; do not use a directory or `link:` input, which only creates a junction and cannot resolve `@deepseek-ai/*`.
+
+`engines.dsh` is `>=0.2.0 <0.3.0`: DSH validates it on install and again at startup with `semver.satisfies(runtime, range, { includePrerelease: true })`, and refuses an unmet requirement with `incompatible-version` (a profile can grant an exemption in its own `compatibility.json`). The guard is deliberate — 0.3.1 loaded silently and then misbehaved on 0.2.2, so a loud refusal is better than a quiet one.
 
 This repository is the maintained source location. A deployed profile is an external runtime/composition target; this repository does not hand-edit profile files (no manual `package.json` or `dsh.profile.bundles` changes).
 
@@ -42,7 +44,7 @@ The Client half reports what it observed — load snapshot, session/status sourc
 
 ## Compatibility
 
-This bundle consumes `uiSession.sessionStatus`, `connection.state`, the selected binding's `eventSource`, and official `SessionSnapshot` error fields; it does not depend on undocumented `nodes`. The Host `SessionEventWindow` schema has `events` and `target`, but the Client binding's exact window/lifetime contract remains unverified; missing or mismatched event data degrades to a generic notice. See [docs/compatibility.md](docs/compatibility.md).
+This bundle consumes `uiSession.sessionStatus`, `connection.state`, the selected binding's `eventSource`, official `SessionSnapshot` error fields, and — for opening a session from a notification — the optional official `uiWorkspace` service. It does not depend on undocumented `nodes`. It accepts **both** session event-window shapes: `{ entries, hasMore, revision, change }` (DSH 0.2+, entries are `{ type, event }`) and the older `{ events, target }`; `turn/end` reasons are classified from whichever shape arrives, and a shape that matches neither degrades to a generic notice plus one `source-shape` record. See [docs/compatibility.md](docs/compatibility.md) for the verified 0.2.2 contract details.
 
 ## Build
 

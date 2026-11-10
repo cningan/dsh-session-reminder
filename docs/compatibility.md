@@ -2,11 +2,27 @@
 
 本说明只概括 2026-09-22 适配说明（§II）中为 DSH 0.1.7-alpha.1 记录的两处契约变更，然后将当前一侧与本包源码对照检查。这是源码级说明，不是运行时支持矩阵。
 
+## 2026-11-10：DSH 0.2.2-rc.1 的三处契约变更（已从官方产物核实）
+
+下面是**读官方产物**（`resources/app.asar` 解出的 `@deepseek-ai/dsh-desktop-runtime@0.2.2-rc.1`）得到的事实，不是推断。这三条正是本包 0.3.1 在 0.2.x 上失效的原因，0.4.0 已适配。
+
+| 契约面 | 0.1.x（本包 0.3.1 的实现假设） | 0.2.2-rc.1 实际形状 | 本包 0.4.0 的处理 |
+|---|---|---|---|
+| 会话事件窗口 | `{ events, target }` | `{ entries, hasMore, revision, change }`，条目是 `{ type, event }` 包装（`@deepseek-ai/dsh-api-session-controller/lib/client.js` 的 `windowSnapshot()`） | 归一化层 `readEventWindow` 同时认两种形状，返回 `{ shape, maxSeq, turnEnd }`；形状都不符时上报一次 `source-shape`（stage `event-window`）并保持「原因未知」 |
+| 打开会话 | `sessions.open(id)` | `sessions` 服务**没有** `open()`；入口是 `uiWorkspace.openSession(id)`（`@deepseek-ai/dsh-client-ui-workspace`，→ `replaceMain(..., "reveal")`） | 优先 `ctx.get("uiWorkspace").openSession(id)`，回退旧 `sessions.open`，都没有就只记一条日志（点击不跳转，不抛错） |
+| `sessions` 的提供方包 | 写的是 `@deepseek-ai/dsh-client-runtime` | 该包**不存在**（331 个官方包里没有）；`ClientSessions` 由 `@deepseek-ai/dsh-api-session-controller` 用 `rootCtx.reflect.provide("sessions", …)` 注册 | `CLIENT_DEPENDENCIES` 与 `dsh.client.inject` 都改成 `@deepseek-ai/dsh-api-session-controller`，并有直测逐项钉死 |
+
+同时核实无误的：`uiSession.sessionStatus` 仍是 `Map<SessionId, { running, pendingInteraction, completionUnread }>`（等待提醒因此一直有效）；`sessions.binding(id)`、`sessions.list` 仍在。
+
+`turn/end` 的 `reason.kind` 取值（依据第一方 `dsh-client-ui-chat` 的 `endFailure`）：`completed`、`blocked`、`max-tokens`、`error`（带 `error.{code,message}`）、`aborted`（`reason.kind` 为 `user` / `parent` / `hook`）、`interrupted`（**DSH 进程在回合结束前退出**，官方文案 "The DSH process exited before this turn finished."）、`forked`。本包把 `interrupted` 单独归成 `process-interrupted`：它与「读不到原因」不是一回事。
+
+版本护栏：`package.json` 声明 `engines.dsh = ">=0.2.0 <0.3.0"`。0.3.x 及以后会被 DSH 在安装与启动时拒绝（`incompatible-version`），直到发布新版本为止——这是有意的，避免再出现「装上但静默失效」。DSH 的比较用 `semver.satisfies(runtime, range, { includePrerelease: true })`，预发布版本因此能正常判定。
+
 | 契约面 | 适配说明中记录的历史变更 | 本仓库验证的当前 bundle |
 |---|---|---|
 | 等待交互 | 从按 requestKey 索引的 uiSession.pendingInteractions 改为 uiSession.sessionStatus——按会话存储的 Map，包含 running、pendingInteraction 与 completionUnread。说明称 pendingInteraction 仍带有 kind。 | readSessionStatus 接受全会话 Map；syncSessions 遍历每一条目，读取 running 与 pendingInteraction，并用 interaction.kind 生成标签。初始等待被基线化；后续等待按对象同一性与会话 id 去重。见 SPEC 的「会话事件判定」（等待按对象同一性与会话 id 去重；交互 kind 由 `core/classify` 的 `classifyInteraction` 映射）。 |
 | 连接状态 | 从 connection.hostDescription 改为 connection.state，取值为 connected、connecting 与 disconnected。 | observeConnection 仍订阅 ctx.connection.state，只把 connected 视为可用；但非连接状态不再是通知原因。重连只重新同步会话状态。见 SPEC 的「连接处理」。 |
-| 停止原因 | Host 的 `session/event` 在提交后发出含 `seq`、`type`、`data` 的 `SessionEvent`；Host `SessionEventWindow` 有 `events[]` 和 `target`。Client 会话 binding 的 `eventSource` 按既有 Client 契约可知，但其确切窗口形状与生命周期未重新查询。 | 插件只观察选中 binding，从不显式调用 `retain` 或 `open`，并按 Host 窗口形状暂作解析。只有 `turn/end` 且 `reason.kind === 'completed'` 才证明成功；仅凭 `completionUnread` 既不触发提醒，也不能归类其原因。显式“用户中止”的结果静默处理。`removed` 详情只对选中会话查用；后台 removal/Stop/Cancel 的原因可能未知并产生通用提醒。无列表行的停止边沿会被抑制，视为可能的归档/移除。歧义的 interrupted/forked/legacy 或数据源不可用等结果保持通用。后台会话不会为事件历史被打开。见 SPEC 的「停止判定」与「事件源使用」，以及 `core/classify` 的 `classifyTurnEnd` / `classifyDetail`。 |
+| 停止原因 | Host 的 `session/event` 在提交后发出含 `seq`、`type`、`data` 的 `SessionEvent`；Host `SessionEventWindow` 有 `events[]` 和 `target`。Client 会话 binding 的 `eventSource` 按既有 Client 契约可知，但其确切窗口形状与生命周期未重新查询。 | 插件只观察选中 binding，从不显式调用 `retain` 或 `open`；窗口形状见上方「2026-11-10」一节（0.2 起是 `{ entries, … }`，0.4.0 两种都认）。只有 `turn/end` 且 `reason.kind === 'completed'` 才证明成功；`blocked` / `error` / `max-tokens` / 归因到原因的 aborts 各有自己的标题；`interrupted`（进程退出）单独归类；只有「读不到任何原因」才是通用停止。仅凭 `completionUnread` 既不触发提醒，也不能归类其原因。显式“用户中止”的结果静默处理。`removed` 详情只对选中会话查用；后台会话的原因可能未知并产生通用提醒。无列表行的停止边沿会被抑制，视为可能的归档/移除。后台会话不会为事件历史被打开。见 SPEC 的「停止判定」与「事件源使用」，以及 `core/classify` 的 `classifyTurnEnd` / `classifyDetail`。 |
 
 ## 待处理交互去重
 

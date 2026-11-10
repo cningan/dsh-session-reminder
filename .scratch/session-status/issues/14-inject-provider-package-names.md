@@ -1,7 +1,7 @@
 # 14: dsh.client.inject 里 sessions 的提供方包名未经运行时验证
 
-**Status:** needs-info
-**Blocked by:** None（可立即开始）
+**Status:** done — 已在官方产物上核实并把提供方改为 `@deepseek-ai/dsh-api-session-controller`（见票 17）
+**Blocked by:** None（已解除）
 **Source:** GitHub #13（已从 GitHub 迁入本地工作系统）
 
 ## 发现
@@ -72,4 +72,18 @@ Harness 文档写明 `dsh.client.inject` 的条目「only order activation and s
 
 
 - 2026-09-27（维护者）：范围再缩小。`slots` 服务已随主插件设置区移除（commit afcd4c7）从 `CLIENT_DEPENDENCIES` 出清单，所以本票只剩 **`sessions` 一项**待真机确认。原文里 `slots` 的查证过程与「五个服务项」验收按历史记录保留、不再作为验收口径。
+
+**cningan · 2026-11-10**
+
+## 已确认：`sessions` 的提供方是 `@deepseek-ai/dsh-api-session-controller`
+
+在 DSH `0.2.2-rc.1` 的 `resources/app.asar` 上核实（读 header + 按 offset/size 取文件，不加载整个归档）：
+
+- `@deepseek-ai/dsh-api-session-controller/lib/client.js`：`var ClientSessions = class { … constructor(rootCtx, remote) { … rootCtx.reflect.provide("sessions", this, void 0) } }`——服务名就是 `sessions`，在这个类的构造里注册。
+- 同一文件里 `ClientSessions` 的方法表（`retain` / `using` / `retainInfo` / `refresh` / `search` / `create` / `fork` / `binding` / `scope` / `retainedScope` …）**没有 `open()`**。`reference.attachOpening(this.manager.get(id).open(), signal)` 里的 `.open()` 是 Session 对象的方法，不是服务的。
+- 331 个 `@deepseek-ai/*` 包中确实没有 `dsh-client-runtime`（票里原有的结论成立）。
+
+处置：`CLIENT_DEPENDENCIES` 与 `package.json` 的 `dsh.client.inject` 都改为 `@deepseek-ai/dsh-api-session-controller`，并新增一条直测把四个服务的提供方逐项钉死（`test/client-assembly.test.mjs`「依赖表把每个本地服务钉到已核实的官方提供方包」）。
+
+同时确认了另外三项：`locale` → `dsh-client-locale`、`connection` → `dsh-client-connection`、`uiSession` → `dsh-client-ui-session`，与仓库里既有声明一致。
 
