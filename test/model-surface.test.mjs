@@ -64,6 +64,7 @@ function launch(source, { focused = false, workspace, eventWindow, dshVersion } 
   const notices = [];
   const provided = {};
   const opened = [];
+  const serviceCalls = [];
 
   class MockNotification {
     static permission = "granted";
@@ -140,8 +141,10 @@ function launch(source, { focused = false, workspace, eventWindow, dshVersion } 
       provided[name] = value;
       return () => { delete provided[name]; };
     },
-    // 可选服务解析：插件用 `ctx.get("uiWorkspace")` 取「打开会话」的入口，不写进 inject。
-    get(name) {
+    // 可选服务解析：插件用 `ctx.get("uiWorkspace", strict)` 取「打开会话」的入口，
+    // 不写进 inject。第二个参数（严格度）被记下来，供测试断言两处调用不同。
+    get(name, strict) {
+      serviceCalls.push({ name, strict });
       return name === "uiWorkspace" ? workspace : void 0;
     }
   };
@@ -170,6 +173,7 @@ function launch(source, { focused = false, workspace, eventWindow, dshVersion } 
     notices,
     opened,
     eventWindow,
+    serviceCalls,
     records: () => reports.map((report) => JSON.parse(report.body)),
     payloads: (event) => reports
       .map((report) => JSON.parse(report.body))
@@ -422,11 +426,24 @@ test("点击通知：优先用官方 uiWorkspace.openSession 打开会话", () =
   harness.stop();
 
   assert.equal(harness.notices.length, 1);
+
+  // 装载快照如实记下「能不能跳转」这一能力位，且用 **non-strict** 解析：它描述「这套组合里
+  // 有没有 ui-workspace」，不是「此刻是否已激活」——本插件的 apply 可能早于它激活。
+  assert.equal(harness.payloads("attach")[0].hasWorkspaceOpen, true);
+  assert.deepEqual(
+    harness.serviceCalls.filter((call) => call.name === "uiWorkspace").map((call) => call.strict),
+    [false],
+    "装载快照应使用 non-strict 解析"
+  );
+
   harness.notices[0].onclick();
   assert.deepEqual(workspace.opened, ["current"], "点击应调用 uiWorkspace.openSession");
-
-  // 装载快照如实记下「能不能跳转」这一能力位。
-  assert.equal(harness.payloads("attach")[0].hasWorkspaceOpen, true);
+  // 点击那一次用 **strict** 解析：必须真的可用，否则宁可回退。
+  assert.deepEqual(
+    harness.serviceCalls.filter((call) => call.name === "uiWorkspace").map((call) => call.strict),
+    [false, true],
+    "装载快照 non-strict、点击 strict"
+  );
 
   // 没有 ui-workspace 时不再调用已不存在的 sessions.open：点一下只是不跳转，不抛错。
   const bare = launch(clientBundle, { focused: false });
