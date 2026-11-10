@@ -1,0 +1,75 @@
+name: publish
+
+# 发布到 npm 并开 GitHub Release。
+#
+# 触发：推送版本 tag（`v0.5.0` 这种）。tag 必须等于 package.json 的 version，
+# 否则 workflow 直接失败——避免打得出手却发出个错版本。
+#
+# 认证：Trusted Publishing（GitHub OIDC），不需要任何 npm token。
+# 前置条件（一次性，需要 npm 账号 2FA）：
+#   npm trust github @cningan/dsh-session-status --file publish.yml \
+#     --repo cningan/dsh-session-status --env npm-publish --allow-publish
+# 之后每次发布：npm version patch && git push --follow-tags
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm-publish
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install
+        run: npm ci
+
+      # 发布前跑完整门禁：产物断言在 npm 端不可撤销，宁可在这里失败。
+      - name: Test
+        run: npm test
+
+      - name: Assert the published surface
+        run: npm run check:production
+
+      - name: Verify the tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "v$version" != "${GITHUB_REF_NAME}" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match package.json version v$version" >&2
+            exit 1
+          fi
+
+      - name: Publish to npm (OIDC, with provenance)
+        run: npm publish --provenance --access public --loglevel=verbose
+
+      - name: Pack the tarball for the release
+        run: npm pack
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            ./cningan-dsh-session-status-*.tgz
