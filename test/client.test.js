@@ -230,8 +230,8 @@ test("归属过滤端到端：子代理会话不投递、不产出边沿记录�
   harness.setStatuses(new Map([stopped("current"), stopped("child"), stopped("fork")]));
 
   assert.deepEqual(harness.notices.map((notice) => notice.options.body), [
-    "Current session: The session stopped, but the reason is unavailable",
-    "Fork: The session stopped, but the reason is unavailable"
+    "Current session: It ended, but the stop reason was not read",
+    "Fork: It ended, but the stop reason was not read"
   ]);
   // 子代理会话**没有任何边沿记录**：它从未进入判定。这是「按归属跳过」的签名，
   // 与「还没观察到边沿」由下面的状态源摘要区分。
@@ -271,10 +271,10 @@ test("后台停止边沿端到端：判定 → 文案 → 投递 → 逐条上�
   harness.setStatuses(new Map([running("current"), stopped("background", { completionUnread: true })]));
 
   assert.equal(harness.notices.length, 1);
-  assert.equal(harness.notices[0].title, "Session interrupted or stopped");
+  assert.equal(harness.notices[0].title, "Session ended (reason not read)");
   assert.equal(
     harness.notices[0].options.body,
-    "Background session: The session stopped, but the reason is unavailable"
+    "Background session: It ended, but the stop reason was not read"
   );
 
   // 上报链的另一半：装载快照与状态源形状（读方 `diagnose` 依赖的字段）。
@@ -485,6 +485,6 @@ test("语言：通知文案跟随官方 locale 词典", () => {
   harness.setStatuses(new Map([stopped("background", { completionUnread: true })]));
 
   assert.equal(harness.notices.length, 1);
-  assert.equal(harness.notices[0].title, "会话已中断或停止");
-  assert.equal(harness.notices[0].options.body, "Background session：会话已停止，但无法确定原因");
+  assert.equal(harness.notices[0].title, "会话已结束（原因未读取）");
+  assert.equal(harness.notices[0].options.body, "Background session：已结束，但没有读取到结束原因");
 });

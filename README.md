@@ -22,7 +22,7 @@ The shell implementation is an external integration boundary and is not included
 
 ## Package entry points
 
-- The package name is @cningan/dsh-session-status, version 0.5.0. It is published to the npm registry under that name (`publishConfig.access: public`) and declares `engines.dsh`.
+- The package name is @cningan/dsh-session-status, version 0.5.1. It is published to the npm registry under that name (`publishConfig.access: public`) and declares `engines.dsh`.
 - lib/index.js is the Host half: it injects `webServer`, owns the diagnostics sink (`/plugins/dsh-session-status/diagnostics`), and appends JSONL records under the profile's `.dsh-session-status/` directory. It never decides when a reminder is due.
 - lib/client.js is the loader-ready Client bundle: it registers the session notification capability and the test service `sessionStatusTest` (`ctx.provide`). It ships **no settings UI at all** — no slot, no stylesheet, no React — and its Client dependency list therefore has no `slots` (`locale` stays: it serves the reminder copy).
 

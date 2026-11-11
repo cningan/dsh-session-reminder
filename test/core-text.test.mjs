@@ -101,3 +101,13 @@ test("the localized templates still carry their placeholders", () => {
   assert.match(dictionaries.zh.waitTitle, /\{kind\}/);
   assert.match(dictionaries.en.waitTitle, /\{kind\}/);
 });
+
+test("读不到原因时的标题不谎称「中断」：它可能是正常结束", () => {
+  // 这条措辞是用户直接反馈的问题：后台会话正常结束也显示「会话已中断或停止」。
+  // 未知原因必须说「结束」，不能用「中断」押一个未必成立的结论。
+  for (const lang of ["zh", "en"]) {
+    const headline = terminalHeadline("interrupted", makeT(lang));
+    assert.doesNotMatch(headline, /中断|interrupted/i, `${lang}: 未知原因不应断言中断（得到 "${headline}"）`);
+    assert.match(headline, /结束|ended|finished/i, `${lang}: 应说明会话已结束`);
+  }
+});

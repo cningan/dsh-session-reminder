@@ -26,7 +26,7 @@ function notice(overrides = {}) {
     key: "terminal:s1:1",
     kind: "terminal",
     sessionId: "s1",
-    title: "Session interrupted or stopped",
+    title: "Session ended (reason not read)",
     message: "Background session",
     ...overrides
   };
@@ -107,7 +107,7 @@ test("falls back to the WebView bridge when the shell bridge throws", () => {
   assert.deepEqual(harness.webviewPayloads, [{
     type: `${PLUGIN_ID}/notify`,
     kind: "terminal",
-    title: "Session interrupted or stopped",
+    title: "Session ended (reason not read)",
     message: "Background session"
   }]);
   // 原生桥被接住时不碰浏览器 API。
@@ -141,7 +141,7 @@ test("falls back to the browser Notification API when every native bridge throws
   // 走到浏览器这一步才读得到权限，调用方据此刷新自己的权限状态。
   assert.equal(result.browserPermission, "granted");
   assert.equal(harness.notices.length, 1);
-  assert.equal(harness.notices[0].title, "Session interrupted or stopped");
+  assert.equal(harness.notices[0].title, "Session ended (reason not read)");
   assert.equal(harness.notices[0].options.body, "Background session");
   assert.equal(harness.failures.map((entry) => entry.label).join(" | "),
     "shell notification failed | WebView notification failed");
@@ -188,7 +188,7 @@ test("hands the reminder to the browser API and reports the request body as-is",
   assert.equal(result.fellBack, false);
   assert.equal(harness.notices.length, 1);
   const { title, options } = harness.notices[0];
-  assert.equal(title, "Session interrupted or stopped");
+  assert.equal(title, "Session ended (reason not read)");
   assert.equal(options.body, "Background session");
   assert.equal(options.renotify, true);
   assert.equal(options.silent, false);

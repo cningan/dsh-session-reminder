@@ -61,7 +61,7 @@ function observable(initial) {
 }
 
 /** 最小假浏览器：官方源的替身 + 假 fetch（上报请求体原样收下）+ 假 provide（无 slots）。 */
-function launch(source, { focused = false, workspace, eventWindow, dshVersion, devTools = false } = {}) {
+function launch(source, { focused = false, workspace, eventWindow, backgroundWindows, dshVersion, devTools = false } = {}) {
   const reports = [];
   const notices = [];
   const provided = {};
@@ -122,10 +122,13 @@ function launch(source, { focused = false, workspace, eventWindow, dshVersion, d
   const ctx = {
     sessions: {
       list,
-      // 绑定只对「选中会话」成立：DSH 里 binding 借出已保留的会话作用域，未保留就没有。
-      binding: () => (eventWindow === void 0
-        ? void 0
-        : { eventSource: eventWindow, session: sessionFace }),
+      // 绑定借出「已保留的会话作用域」：选中会话由 eventWindow 模拟，后台会话由
+      // backgroundWindows 逐 id 提供（没有就是 undefined——与官方 scopes.get(id)?.binding 一致）。
+      binding: (id) => {
+        const perSession = backgroundWindows?.get(id);
+        if (perSession !== void 0) return perSession;
+        return eventWindow === void 0 ? void 0 : { eventSource: eventWindow, session: sessionFace };
+      },
       open() {}
     },
     uiSession: { sessionStatus, adapter: { current } },
@@ -187,6 +190,10 @@ function launch(source, { focused = false, workspace, eventWindow, dshVersion, d
     setRunning: (running) => {
       sessionStatus.set(new Map([["current", { running, completionUnread: false }]]));
     },
+    /** 直接写整张会话状态表：用来同时驱动选中会话与后台会话。 */
+    setStatuses: (entries) => sessionStatus.set(new Map(entries)),
+    /** 直接写列表行：后台会话的标题、归属都来自这里。 */
+    setRows: (byId) => list.set({ byId }),
     /** 触发一次「运行 → 停止」边沿（自动提醒的触发条件）。 */
     stop: () => {
       sessionStatus.set(new Map([["current", { running: true, completionUnread: false }]]));
@@ -325,7 +332,7 @@ test("deliverAdHoc 与自动提醒共用同一个投递路径与键序号计数�
   assert.equal(harness.payloads("deliver")[1].key, "test-probe:test:2");
   assert.equal(harness.payloads("deliver")[2].key, "test-probe:interrupted:3");
   assert.equal(harness.payloads("deliver")[2].kind, "interrupted");
-  assert.equal(harness.notices[2].title, "Session interrupted or stopped");
+  assert.equal(harness.notices[2].title, "Session ended (reason not read)");
 
   // 自动提醒与临时投递共用同一个 delivery 实例（tag/权限/上报都在这一条链上）：
   // 它接着拿第 4 号序号，且渠道/权限事实与那一条链一致。
@@ -357,14 +364,14 @@ test("deliverSample：按原因模拟，文案与真实停止逐字符相同", (
   const t = (key) => dictionaries.en[key];
   const expected = [
     ["completed", "Session run completed", "Sample session"],
-    ["interrupted", "Session interrupted or stopped", "Sample session: The session stopped, but the reason is unavailable"],
+    ["interrupted", "Session ended (reason not read)", "Sample session: It ended, but the stop reason was not read"],
     ["process-interrupted", "This run did not finish (DSH exited)", "Sample session"],
     ["blocked", "This run was blocked", "Sample session"],
     ["max-tokens", "This run reached the output limit", "Sample session"],
     ["error", "This run failed", "Sample session: E_MODEL: upstream 502"],
     ["agent-error", "Session runtime error", "Sample session: runtime crashed"],
     ["prompt-error", "Operation failed", "Sample session: E_NET: offline"],
-    ["session-open-error", "The session window failed to load", "Sample session: The session stopped, but the reason is unavailable"],
+    ["session-open-error", "The session window failed to load", "Sample session: It ended, but the stop reason was not read"],
     ["aborted-parent", "The parent task stopped this run", "Sample session"],
     ["aborted-hook", "An extension stopped this run", "Sample session: policy-check"]
   ];
@@ -453,8 +460,8 @@ test("停止原因：DSH 0.2 的 entries 事件窗口能读出 turn/end，文案
   // ① 绑定会话时只抬水位：窗口里那条旧 turn/end（completed）不是这一轮的结果。
   harness.stop();
   assert.equal(harness.notices.length, 1, "停止应投递一条提醒");
-  assert.equal(harness.notices[0].title, "Session interrupted or stopped");
-  assert.match(harness.notices[0].options.body, /reason is unavailable/);
+  assert.equal(harness.notices[0].title, "Session ended (reason not read)");
+  assert.match(harness.notices[0].options.body, /stop reason was not read/);
   assert.equal(harness.payloads("deliver").at(-1).reason, "interrupted");
 
   // ② 这一轮真正的新 turn/end（模型调用出错）到达之后再停：标题说「本轮出错」，
@@ -523,4 +530,41 @@ test("点击通知：优先用官方 uiWorkspace.openSession 打开会话", () =
   bare.stop();
   assert.equal(bare.payloads("attach")[0].hasWorkspaceOpen, false);
   assert.doesNotThrow(() => bare.notices[0].onclick(), "缺少打开入口时点击通知不应抛错");
+});
+
+test("后台会话的停止边沿：binding 还在就用它自己的 turn/end，不再一律「原因未读取」", () => {
+  // 这是用户报的那一类：在后台跑完的会话，提醒说「原因未读取」。
+  // 事实是它自己的作用域还在（用户在这个窗口里打开过），窗口里有 turn/end（completed）。
+  const bgWindow = observable({
+    entries: [{ type: "append", event: { seq: 7, type: "turn/end", data: { reason: { kind: "completed" } } } }],
+    hasMore: false,
+    revision: 1,
+    change: { kind: "replace", entries: [] }
+  });
+  const harness = launch(clientBundle, {
+    focused: false,
+    backgroundWindows: new Map([["bg", { eventSource: bgWindow, session: observable({}) }]])
+  });
+  harness.setRows({ current: { title: "Current session" }, bg: { title: "Background session" } });
+
+  // 基线：两个都在跑（首次观察只建基线，不追报）。
+  harness.setStatuses([
+    ["current", { running: true, completionUnread: false }],
+    ["bg", { running: true, completionUnread: false }]
+  ]);
+  // 后台会话结束。
+  harness.setStatuses([
+    ["current", { running: true, completionUnread: false }],
+    ["bg", { running: false, completionUnread: false }]
+  ]);
+
+  const notice = harness.notices.at(-1);
+  assert.equal(notice.title, "Session run completed", "后台会话正常结束应报「已完成」");
+  assert.equal(notice.options.body, "Background session");
+  const delivered = harness.payloads("deliver").at(-1);
+  assert.equal(delivered.sessionId, "bg");
+  assert.equal(delivered.reason, "completed", "原因来自它自己的事件窗口");
+  // 边沿记录也要如实：这一条确实有 turn/end 事实。
+  const edge = harness.payloads("edge").find((entry) => entry.sessionId === "bg");
+  assert.equal(edge.hasTurnEndReason, true);
 });

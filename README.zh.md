@@ -22,7 +22,7 @@ Shell 桥的实现属于外部集成边界，不包含在本仓库中。
 
 ## 包入口
 
-- 包名为 @cningan/dsh-session-status，版本 0.5.0；已以该名字发布到 npm registry（`publishConfig.access: public`），并声明 `engines.dsh`。
+- 包名为 @cningan/dsh-session-status，版本 0.5.1；已以该名字发布到 npm registry（`publishConfig.access: public`），并声明 `engines.dsh`。
 - lib/index.js 是 Host 半边：注入 `webServer`，持有诊断落盘端点（`/plugins/dsh-session-status/diagnostics`），把 JSONL 记录追加到 profile 下的 `.dsh-session-status/` 目录；它不参与"何时该提醒"的判定。
 - lib/client.js 是可由 DSH loader 加载的 Client bundle：注册会话通知能力与测试服务 `sessionStatusTest`（`ctx.provide`）。它**不含任何设置 UI**——不注册 slot、不装样式表、不取 React——因此 Client 依赖清单里没有 `slots`（`locale` 保留：它服务的是通知文案）。
 

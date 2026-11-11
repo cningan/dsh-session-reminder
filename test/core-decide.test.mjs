@@ -511,7 +511,7 @@ test("只读边沿事实的顺序：已产出提醒的在前（与 notices 同�
   ]);
 });
 
-test("只读边沿事实区分「静默」（用户取消/已移除）与「被抑制」，并带上选中会话与 turn/end 事实", () => {
+test("只读边沿事实区分「静默」（用户取消/已移除）与「被抑制」，turn/end 事实按会话计", () => {
   const decider = createDecider();
   const cancelled = { removed: false, turnEnd: { kind: "aborted", reason: { kind: "user" } }, detail: undefined };
   decider.observe(snapshot([session("a", { running: true }), session("c", { running: true })], { currentId: "a" }));
@@ -532,7 +532,9 @@ test("只读边沿事实区分「静默」（用户取消/已移除）与「被�
       interactionKind: null,
       suppressed: null,
       isCurrent: false,
-      hasTurnEndReason: true
+      // 后台会话 c 自己没有 scope 事实：不能因为"选中会话有 turn/end"就记 true
+      // （那会让诊断看起来像读到了原因，而提醒里其实是未知）。
+      hasTurnEndReason: false
     },
     // 选中会话被用户取消：静默（不是「列表行不在」），所以 suppressed 为 null。
     {
@@ -580,3 +582,49 @@ test("只读边沿事实是冻结的，且每轮 observe 都重新给出本轮�
   assert.deepEqual(decider.edges, []);
 });
 
+
+test("后台会话的停止边沿：用它自己的 scope 分类，而不是一律「原因未知」", () => {
+  // 事实：a 是选中会话（且没有 turn/end），b 在后台跑完了一轮。
+  // 期望：b 的提醒用 b 自己的 turn/end 得出 completed——后台不等于「不知道」。
+  const decider = createDecider();
+  const runningScope = { turnEnd: undefined, detail: undefined };
+
+  decider.observe(snapshot(
+    [session("a", { running: true }), session("b", { running: true })],
+    { currentId: "a", current: runningScope }
+  ));
+
+  const notices = decider.observe(snapshot(
+    [
+      session("a", { running: true }),
+      session("b", {
+        running: false,
+        scope: { turnEnd: { kind: "completed" }, detail: undefined }
+      })
+    ],
+    { currentId: "a", current: runningScope }
+  ));
+
+  assert.equal(notices.length, 1, "后台会话停止应产出一条提醒");
+  assert.equal(notices[0].sessionId, "b");
+  assert.equal(notices[0].reason, "completed", "有 turn/end 就该报真实原因，而不是 interrupted");
+});
+
+test("后台会话没有 scope 时仍然是「未知」，且边沿记录如实标注", () => {
+  const decider = createDecider();
+  const runningScope = { turnEnd: undefined, detail: undefined };
+
+  decider.observe(snapshot(
+    [session("a", { running: true }), session("b", { running: true })],
+    { currentId: "a", current: runningScope }
+  ));
+  const notices = decider.observe(snapshot(
+    [session("a", { running: true }), session("b", { running: false })],
+    { currentId: "a", current: runningScope }
+  ));
+
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0].reason, "interrupted", "真读不到原因时才是未知");
+  const edge = decider.edges.find((fact) => fact.sessionId === "b" && fact.kind === "terminal");
+  assert.equal(edge.hasTurnEndReason, false, "b 自己没有 turn/end，记录应为 false");
+});
