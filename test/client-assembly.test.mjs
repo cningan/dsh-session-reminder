@@ -24,7 +24,7 @@ import { CLIENT_DEPENDENCIES, inject } from "../lib/client/assembly.mjs";
 
 const ENTRY = fileURLToPath(new URL("../lib/client/entry.mjs", import.meta.url));
 const MANIFEST = fileURLToPath(new URL("../package.json", import.meta.url));
-const PLUGIN_ID = "@cningan/dsh-session-status";
+const PLUGIN_ID = "dsh-session-reminder";
 
 const manifest = JSON.parse(await readFile(MANIFEST, "utf8"));
 
@@ -79,7 +79,7 @@ test("依赖表把每个本地服务钉到已核实的官方提供方包", () =>
 test("插件页显示名来自 locale 资源，不是裸包名", async () => {
   // DSH 的 `readPluginMeta` 读 `<specifier>/locale/<lang>.json` 的 `meta.title` 作为插件页
   // 显示名，**缺省才回落到 package.json 的 name**——于是列表里会直接出现
-  // `@cningan/dsh-session-status` 这种不好看的裸包名。这条断言把「有中文名」锁住。
+  // `dsh-session-reminder` 这种不好看的裸包名。这条断言把「有中文名」锁住。
   for (const language of ["zh", "en"]) {
     const url = new URL(`../locale/${language}.json`, import.meta.url);
     const parsed = JSON.parse(await readFile(url, "utf8"));

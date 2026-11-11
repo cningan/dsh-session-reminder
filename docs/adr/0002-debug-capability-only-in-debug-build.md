@@ -8,4 +8,4 @@ Status: superseded by [ADR-0003](0003-test-capability-lives-outside-the-plugin.m
 
 ## Consequences
 
-诊断**上报**（写入 profile 的 `.dsh-session-status/diagnostics.jsonl`）不随调试 UI 一起裁剪：它是审计能力，对用户不可见却让维护者事后读账，正式包保留。
+诊断**上报**（写入 profile 的 `.dsh-session-reminder/diagnostics.jsonl`）不随调试 UI 一起裁剪：它是审计能力，对用户不可见却让维护者事后读账，正式包保留。

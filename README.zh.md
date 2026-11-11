@@ -1,4 +1,4 @@
-# @cningan/dsh-session-status
+# dsh-session-reminder
 
 [English](README.md) | 中文
 
@@ -22,11 +22,11 @@ Shell 桥的实现属于外部集成边界，不包含在本仓库中。
 
 ## 包入口
 
-- 包名为 @cningan/dsh-session-status，版本 0.5.1；已以该名字发布到 npm registry（`publishConfig.access: public`），并声明 `engines.dsh`。
-- lib/index.js 是 Host 半边：注入 `webServer`，持有诊断落盘端点（`/plugins/dsh-session-status/diagnostics`），把 JSONL 记录追加到 profile 下的 `.dsh-session-status/` 目录；它不参与"何时该提醒"的判定。
-- lib/client.js 是可由 DSH loader 加载的 Client bundle：注册会话通知能力与测试服务 `sessionStatusTest`（`ctx.provide`）。它**不含任何设置 UI**——不注册 slot、不装样式表、不取 React——因此 Client 依赖清单里没有 `slots`（`locale` 保留：它服务的是通知文案）。
+- 包名为 dsh-session-reminder，版本 0.6.0（0.6.0 起从 `@cningan/dsh-session-status` 改名；旧 scoped 包名继续留在 npm 上作为上一代名字）；已以该名字发布到 npm registry（`publishConfig.access: public`），并声明 `engines.dsh`。
+- lib/index.js 是 Host 半边：注入 `webServer`，持有诊断落盘端点（`/plugins/dsh-session-reminder/diagnostics`），把 JSONL 记录追加到 profile 下的 `.dsh-session-reminder/` 目录；它不参与"何时该提醒"的判定。
+- lib/client.js 是可由 DSH loader 加载的 Client bundle：注册会话通知能力与测试服务 `sessionStatusTest`（`ctx.provide`）。提醒本身不需要界面；它唯一的 UI 贡献是**插件自己详情页里的调试面板**（`plugins.detail.section`，默认关闭），所以依赖清单里有 `slots`、工厂也会向 loader 取 React。**设置页里仍然什么都没有**。
 
-包声明 `dsh.bundle.patch`（`cordis.patch.yml`），官方渠道才会把它识别为 bundle：用 `plugin_manager` 的 `install_bundle`（或客户端「添加插件」）安装，自带 patch 会挂载本包自己的条目（`id: session-status`、`name: '@cningan/dsh-session-status'`）。安装输入用 **npm registry 的包名**——只有这种形式才能被 DSH 插件页「检查更新」识别并原地升级（本地 `.tgz`、GitHub 链接、`github:` spec 一律报「不可更新」，只能卸载重装）。本地 `.tgz` 仍可用于离线验证；不要用目录或 `link:` 形式——那只建 junction，`@deepseek-ai/*` 无法解析。
+包声明 `dsh.bundle.patch`（`cordis.patch.yml`），官方渠道才会把它识别为 bundle：用 `plugin_manager` 的 `install_bundle`（或客户端「添加插件」）安装，自带 patch 会挂载本包自己的条目（`id: session-status`、`name: 'dsh-session-reminder'`）。安装输入用 **npm registry 的包名**——只有这种形式才能被 DSH 插件页「检查更新」识别并原地升级（本地 `.tgz`、GitHub 链接、`github:` spec 一律报「不可更新」，只能卸载重装）。本地 `.tgz` 仍可用于离线验证；不要用目录或 `link:` 形式——那只建 junction，`@deepseek-ai/*` 无法解析。
 
 `engines.dsh` 是 `>=0.2.0 <0.3.0`：DSH 在安装时与启动时各校验一次（`semver.satisfies(runtime, range, { includePrerelease: true })`），不满足就以 `incompatible-version` 拒绝（Profile 可在自己的 `compatibility.json` 里豁免）。这道护栏是有意的——0.3.1 在 0.2.2 上能静默加载然后出错，大声拒绝比悄悄失效好。
 
@@ -40,7 +40,7 @@ Shell 桥的实现属于外部集成边界，不包含在本仓库中。
 
 ## 诊断
 
-Client 半边把它观察到的事实（装载快照、会话/状态数据源形状、运行边沿、前台判定、投递结果，以及平台自己的通知生命周期事件）上报给 Host 半边，后者追加写入 `<profile>/.dsh-session-status/diagnostics.jsonl`；Host 加载时还会先写一条 `host-ready`，用来区分"Host 没跑起来"与"Client 没上报"。事件词表、每种事件的载荷最小形状与记录 envelope 有**唯一 owner**（Client 发送方、Host 与读方消费同一份）；Host 是**闸门**——落盘前校验，形状不符的记录不再静默写入：请求得到 400（带回累计拒绝条数），同一份 JSONL 里留下一条 `diagnostics-rejected` 事实。每条 Client 记录还标明产生它的构建（`build`）：产物被压缩，且测试能力移出后它已是唯一的观测仪器（记录标 `production`；`debug` 保留为读方认识的历史取值），Host 自己写的行标 `host`。契约只向前加字段——既有字段与取值逐字节不变，未知字段与缺席的 `build`（旧 Client）都被容忍，因此 Host 与 Client 可以各自独立升级。读方因此容忍未知字段，并且**只解释它认识的事件**（Host 行或没见过的名字只出现在事件直方图里）。运行 `npm run diagnose`（或 `node scripts/check-diagnostics.mjs <文件>`）读取该文件并给出结论与退出码。**结论词与退出码语义的唯一定义是 `scripts/check-diagnostics.mjs` 头部文档中的 `VERDICTS` 表**，本文档刻意不复述它们。读方区分「投递调用成功」（`delivered: true`，即 `new Notification()` 没抛错）与「平台确认显示」（同一 key 的 `onshow` 或 `onclose`）：只有后者才是 [ADR-0001](docs/adr/0001-no-require-interaction-short-unique-tags.md) 所依赖的证据。调用成功但该 key 没有任何平台事件时给出"未确认"结论、绝不报告成功；出现 `onerror` 时给出平台拒绝结论并附上 error 文本。这样一次运行可以事后审计，而不必盯着窗口等它结束。
+Client 半边把它观察到的事实（装载快照、会话/状态数据源形状、运行边沿、前台判定、投递结果，以及平台自己的通知生命周期事件）上报给 Host 半边，后者追加写入 `<profile>/.dsh-session-reminder/diagnostics.jsonl`；Host 加载时还会先写一条 `host-ready`，用来区分"Host 没跑起来"与"Client 没上报"。事件词表、每种事件的载荷最小形状与记录 envelope 有**唯一 owner**（Client 发送方、Host 与读方消费同一份）；Host 是**闸门**——落盘前校验，形状不符的记录不再静默写入：请求得到 400（带回累计拒绝条数），同一份 JSONL 里留下一条 `diagnostics-rejected` 事实。每条 Client 记录还标明产生它的构建（`build`）：产物被压缩，且测试能力移出后它已是唯一的观测仪器（记录标 `production`；`debug` 保留为读方认识的历史取值），Host 自己写的行标 `host`。契约只向前加字段——既有字段与取值逐字节不变，未知字段与缺席的 `build`（旧 Client）都被容忍，因此 Host 与 Client 可以各自独立升级。读方因此容忍未知字段，并且**只解释它认识的事件**（Host 行或没见过的名字只出现在事件直方图里）。运行 `npm run diagnose`（或 `node scripts/check-diagnostics.mjs <文件>`）读取该文件并给出结论与退出码。**结论词与退出码语义的唯一定义是 `scripts/check-diagnostics.mjs` 头部文档中的 `VERDICTS` 表**，本文档刻意不复述它们。读方区分「投递调用成功」（`delivered: true`，即 `new Notification()` 没抛错）与「平台确认显示」（同一 key 的 `onshow` 或 `onclose`）：只有后者才是 [ADR-0001](docs/adr/0001-no-require-interaction-short-unique-tags.md) 所依赖的证据。调用成功但该 key 没有任何平台事件时给出"未确认"结论、绝不报告成功；出现 `onerror` 时给出平台拒绝结论并附上 error 文本。这样一次运行可以事后审计，而不必盯着窗口等它结束。
 
 ## 兼容性
 
@@ -55,7 +55,7 @@ Client 半边把它观察到的事实（装载快照、会话/状态数据源形
 - `npm run build:client` —— 唯一的产物：不含任何测试 UI，也不含任何设置 UI，但会注册测试服务 `sessionStatusTest`（`ctx.provide`），即仓库内独立 `dev/` 调试插件要 inject 的那条 Hook
 - `npm test` —— `pretest` 先构建该产物，测试针对它运行
 - `npm run check:production` —— 构建并断言**产物表面**：没有调试痕迹、也没有任何设置界面（无 `dshss-settings` 类名、无 `settings.section` 注册），且有测试服务 Hook（阳性对照）
-- `npm run diagnose` —— 读 `<profile>/.dsh-session-status/diagnostics.jsonl`，给出结论与退出码；它与发送方、Host 闸门消费同一份诊断契约，并且只解释它认识的事件
+- `npm run diagnose` —— 读 `<profile>/.dsh-session-reminder/diagnostics.jsonl`，给出结论与退出码；它与发送方、Host 闸门消费同一份诊断契约，并且只解释它认识的事件
 - `prepack` 走同一条构建，因此从 tarball 安装永远不会带上测试代码
 
 ## 构建与测试状态

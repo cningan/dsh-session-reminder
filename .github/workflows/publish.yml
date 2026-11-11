@@ -7,8 +7,8 @@ name: publish
 #
 # 认证：Trusted Publishing（GitHub OIDC），不需要任何 npm token。
 # 前置条件（一次性，需要 npm 账号 2FA）：
-#   npm trust github @cningan/dsh-session-status --file publish.yml \
-#     --repo cningan/dsh-session-status --env npm-publish --allow-publish
+#   npm trust github dsh-session-reminder --file publish.yml \
+#     --repo cningan/dsh-session-reminder --env npm-publish --allow-publish
 # 之后每次发布：npm version patch && git push --follow-tags
 
 on:
@@ -72,4 +72,4 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" \
             --title "${GITHUB_REF_NAME}" \
             --generate-notes \
-            ./cningan-dsh-session-status-*.tgz
+            ./cningan-dsh-session-reminder-*.tgz

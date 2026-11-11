@@ -1,4 +1,4 @@
 - insert:
-    - id: session-status
-      name: '@cningan/dsh-session-status'
+    - id: session-reminder
+      name: 'dsh-session-reminder'
       config: {}

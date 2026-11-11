@@ -354,10 +354,10 @@ test("样式表按标记安装/替换/卸载；文案跟随 DSH 界面语言（�
   const previous = globalThis.document;
   globalThis.document = fakeDocument;
   try {
-    const dispose = installPanelStyle("@cningan/dsh-session-status-debug");
+    const dispose = installPanelStyle("dsh-session-reminder-debug");
     assert.equal(head.children.length, 1);
     assert.equal(head.children[0].dataset.pluginCss, PANEL_STYLE_TAG);
-    assert.equal(head.children[0].dataset.plugin, "@cningan/dsh-session-status-debug");
+    assert.equal(head.children[0].dataset.plugin, "dsh-session-reminder-debug");
     assert.match(head.children[0].textContent, /\.dshss-dev-panel/);
     dispose();
     assert.equal(head.children.length, 0);

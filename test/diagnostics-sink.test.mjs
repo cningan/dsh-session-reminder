@@ -19,8 +19,8 @@ import { CLIENT_BUILDS } from "../lib/diagnostics-contract.mjs";
 import { createDecider } from "../lib/core/decide.mjs";
 import { analyze, parseRecords } from "../scripts/check-diagnostics.mjs";
 
-const PLUGIN_ID = "@cningan/dsh-session-status";
-const ENDPOINT = "/plugins/dsh-session-status/diagnostics";
+const PLUGIN_ID = "dsh-session-reminder";
+const ENDPOINT = "/plugins/dsh-session-reminder/diagnostics";
 const AT = "2026-09-26T10:20:30.000Z";
 const NOW = () => new Date(AT);
 const CLIENT_PREFIX = "client:";
@@ -72,7 +72,7 @@ test("the event-name table is the single source for the six reported events", ()
 
 test("derives the diagnostics route the Host registers, and lets it be overridden", () => {
   assert.equal(diagnosticsEndpoint(PLUGIN_ID), ENDPOINT);
-  assert.equal(diagnosticsEndpoint("dsh-session-status"), ENDPOINT);
+  assert.equal(diagnosticsEndpoint("dsh-session-reminder"), ENDPOINT);
   assert.equal(diagnosticsEndpoint(), ENDPOINT);
   assert.equal(diagnosticsEndpoint(""), ENDPOINT);
 

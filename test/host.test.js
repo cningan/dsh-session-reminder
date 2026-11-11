@@ -46,7 +46,7 @@ function createResponse() {
 }
 
 async function withProfileDirectory(run) {
-  const dir = await mkdtemp(join(tmpdir(), "dsh-session-status-"));
+  const dir = await mkdtemp(join(tmpdir(), "dsh-session-reminder-"));
   const previous = process.env.DSH_PROFILE_DIR;
   process.env.DSH_PROFILE_DIR = dir;
   try {
@@ -65,7 +65,7 @@ function readLines(text) {
 test("host records a ready marker and appends client reports under the profile", async () => {
   await withProfileDirectory(async (dir) => {
     const diagnostics = diagnosticsFile();
-    assert.equal(diagnostics, join(dir, ".dsh-session-status", "diagnostics.jsonl"));
+    assert.equal(diagnostics, join(dir, ".dsh-session-reminder", "diagnostics.jsonl"));
 
     const ctx = createHostContext();
     apply(ctx);

@@ -34,7 +34,7 @@ const DELIVER = line("client:deliver", {
 const platform = (event, error = null) => line("client:platform", { key: KEY, event, error });
 
 /** ① 投递调用成功，平台确认显示。 */
-const SAMPLE_SHOWN = [line("host-ready", { route: "/plugins/dsh-session-status/diagnostics" }), EDGE, DELIVER, platform("onshow")]
+const SAMPLE_SHOWN = [line("host-ready", { route: "/plugins/dsh-session-reminder/diagnostics" }), EDGE, DELIVER, platform("onshow")]
   .join("\n");
 /** ② 投递调用成功，平台明确拒绝显示。 */
 const SAMPLE_ERRORED = [line("host-ready", {}), EDGE, DELIVER, platform("onerror", "NotAllowedError: permission denied")]
@@ -104,7 +104,7 @@ test("the reader still reports no stop edge as pending, not as a delivery verdic
 });
 
 test("the CLI exits with the verdict code from the single-source table", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "dsh-session-status-check-"));
+  const dir = await mkdtemp(join(tmpdir(), "dsh-session-reminder-check-"));
   try {
     for (const [sample, expected] of [
       [SAMPLE_SHOWN, { label: "OK", code: 0 }],
@@ -124,7 +124,7 @@ test("the CLI exits with the verdict code from the single-source table", async (
 });
 
 test("the CLI reports NO-DATA (2) when the file is missing", () => {
-  const run = spawnSync(process.execPath, [SCRIPT, join(tmpdir(), "dsh-session-status-does-not-exist.jsonl")], {
+  const run = spawnSync(process.execPath, [SCRIPT, join(tmpdir(), "dsh-session-reminder-does-not-exist.jsonl")], {
     encoding: "utf8"
   });
   assert.equal(run.status, VERDICTS["NO-DATA"]);

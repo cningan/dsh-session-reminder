@@ -19,7 +19,7 @@ import {
   runDeliveryChain
 } from "../lib/client/delivery.mjs";
 
-const PLUGIN_ID = "@cningan/dsh-session-status";
+const PLUGIN_ID = "dsh-session-reminder";
 
 function notice(overrides = {}) {
   return {

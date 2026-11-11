@@ -25,7 +25,7 @@ import vm from "node:vm";
 // `pretest` 先构建产物，测试针对它运行（构建脚本只有一种产物）。
 const clientBundle = await readFile(new URL("../lib/client.js", import.meta.url), "utf8");
 
-const DIAGNOSTICS_PATH = "/plugins/dsh-session-status/diagnostics";
+const DIAGNOSTICS_PATH = "/plugins/dsh-session-reminder/diagnostics";
 
 function observable(initial) {
   let value = initial;

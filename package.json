@@ -1,7 +1,7 @@
 {
-  "name": "@cningan/dsh-session-status",
+  "name": "dsh-session-reminder",
   "description": "Attention reminders for waits and stop outcomes across running sessions, delivered by Web or workbench channels.",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "icon": "icon.svg",
   "type": "module",
   "engines": {
@@ -57,11 +57,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cningan/dsh-session-status.git"
+    "url": "git+https://github.com/cningan/dsh-session-reminder.git"
   },
-  "homepage": "https://github.com/cningan/dsh-session-status#readme",
+  "homepage": "https://github.com/cningan/dsh-session-reminder#readme",
   "bugs": {
-    "url": "https://github.com/cningan/dsh-session-status/issues"
+    "url": "https://github.com/cningan/dsh-session-reminder/issues"
   },
   "keywords": [
     "dsh",

@@ -238,7 +238,7 @@ export function analyze(records) {
 function defaultFile() {
   return join(
     process.env.DSH_PROFILE_DIR ?? process.env.DSH_HOME ?? ".",
-    ".dsh-session-status",
+    ".dsh-session-reminder",
     "diagnostics.jsonl"
   );
 }

@@ -8,7 +8,7 @@
 
 用户报告：仍然偶尔出现「无法识别原因」的中断提醒，而且基本都发生在对话正常结束时。
 
-诊断日志（`~/.dsh/profiles/desktop/.dsh-session-status/diagnostics.jsonl`，0.5.0 之后）四条终端投递：
+诊断日志（`~/.dsh/profiles/desktop/.dsh-session-reminder/diagnostics.jsonl`，0.5.0 之后）四条终端投递：
 
 ```
 01:09:46  interrupted  session-0230744e...  isCurrent=false

@@ -2,7 +2,7 @@
 
 **Status:** done — 见本文件「Comments」里的落地记录
 **Blocked by:** None
-**Source:** 交接文档 `HANDOFF-2026-11-10-dsh-session-status.md`（仓库外，系统临时目录）
+**Source:** 交接文档 `HANDOFF-2026-11-10-dsh-session-reminder.md`（仓库外，系统临时目录）
 
 ## 发现
 
@@ -48,7 +48,7 @@
 
 **cningan · 2026-11-10（补）**
 
-插件页显示名：不再显示裸包名 `@cningan/dsh-session-status`，改由包内 locale 资源提供——DSH 的 `readPluginMeta` 读 `<specifier>/locale/<lang>.json` 的 `meta.title`，缺省才回落到 `package.json` 的 `name`。因此新增 `locale/zh.json`（「会话提醒」）与 `locale/en.json`（"Session reminders"），并在 `package.json` 里 `exports` 暴露 `./locale/*.json`、`files` 带上 `locale/`；直测锁住这三处（缺任一处都会**静默**回落成裸包名）。
+插件页显示名：不再显示裸包名 `dsh-session-reminder`，改由包内 locale 资源提供——DSH 的 `readPluginMeta` 读 `<specifier>/locale/<lang>.json` 的 `meta.title`，缺省才回落到 `package.json` 的 `name`。因此新增 `locale/zh.json`（「会话提醒」）与 `locale/en.json`（"Session reminders"），并在 `package.json` 里 `exports` 暴露 `./locale/*.json`、`files` 带上 `locale/`；直测锁住这三处（缺任一处都会**静默**回落成裸包名）。
 
 安装验证：`0.4.0` 已用本地 tgz 装进 `desktop` Profile（`applied`），诊断里出现 `host-ready … "version":"0.4.0"`。发布到 npm 仍被本机 token 拦住（`npm whoami` 401、`PUT` 404），等维护者重新登录后继续。
 
@@ -59,7 +59,7 @@
 - `npm publish --registry https://registry.npmjs.org/ --access public`（首次发布，**人工过一次 2FA 浏览器证明**；账号 2FA 策略是 `auth-and-writes`，所以发布不能只靠 token）。CLI 返回 `Your package is being processed…`（HTTP 202）并退出，符合「新包异步接收」。
 - registry 实测：`created` `2026-11-10T15:52:51Z`、`0.4.0` 于 `15:54:59Z` 可见（约 2 分钟）；`versions` 里如期出现 `0.0.0-stage` **占位版本**，`dist-tags.latest` 已正确指向 `0.4.0`；`engines.dsh` 随包发布。
 - 异步窗口期**不要**重复 `npm publish`（否则撞版本唯一索引）——所以发布后只轮询 `npm view`，不重发。
-- Profile 依赖已从 `file:…/cningan-dsh-session-status-0.4.0.tgz` 换成 registry 精确版本 `0.4.0`（先 `remove_bundle` 再 `install_bundle @cningan/dsh-session-status@0.4.0`），这是 DSH 原生「检查更新」唯一认的形式；pnpm 自动把该版本写进 `pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude`（新版本默认会被 `minimumReleaseAge` 拦住）。
+- Profile 依赖已从 `file:…/cningan-dsh-session-reminder-0.4.0.tgz` 换成 registry 精确版本 `0.4.0`（先 `remove_bundle` 再 `install_bundle dsh-session-reminder@0.4.0`），这是 DSH 原生「检查更新」唯一认的形式；pnpm 自动把该版本写进 `pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude`（新版本默认会被 `minimumReleaseAge` 拦住）。
 - 安装产物核对：`locale/zh.json` 在，`lib/client.js` 哈希与仓库源码一致。
 
 仍未完成：**真实 E2E**。需要刷新 DSH 页面让新 Client bundle 生效，然后在一个全新普通会话上、页面失焦时结束一轮，确认通知标题为本轮会话已完成（并在诊断里读到 `reason`）。
