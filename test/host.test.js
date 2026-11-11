@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { apply, DIAGNOSTICS_PATH, diagnosticsFile } from "../lib/index.js";
+import { diagnosticsEndpoint } from "../lib/client/diagnostics-sink.mjs";
 
 function createHostContext() {
   const routes = [];
@@ -209,4 +210,14 @@ test("host stays byte-compatible with an older client: no build field when none 
     assert.deepEqual(Object.keys(stored), ["at", "event", "payload"]);
     assert.deepEqual(stored.payload, STATUS_PAYLOAD);
   });
+});
+
+test("两端诊断端点必须一致：客户端派生的路径 == Host 注册的路由", () => {
+  // 这是本次排障暴露的盲区：客户端的默认插件 id 在 delivery/diagnostics-sink 各有一份，
+  // Host 的 DIAGNOSTICS_PATH 是第三份，旧测试三处各测各的字面量。改名或漂移时，
+  // 客户端会把记录发往一个不存在的路由，静默 404 —— 表现是"插件在工作，但诊断什么都没有"。
+  // 这条断言把两端钉在一起。
+  assert.equal(diagnosticsEndpoint(), DIAGNOSTICS_PATH);
+  // 显式传当前包名也必须得到同一条路径（包名改了而路由没改就会在这里炸）。
+  assert.equal(diagnosticsEndpoint("@cningan/dsh-session-reminder".replace("@cningan/", "")), DIAGNOSTICS_PATH);
 });

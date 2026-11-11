@@ -26,6 +26,9 @@ import { TERMINAL_REASONS } from "../lib/core/classify.mjs";
 import { dictionaries, terminalHeadline } from "../lib/core/text.mjs";
 import { SAMPLE_REASONS, TEST_SERVICE_NAME } from "../lib/client/test-service.mjs";
 
+/** 打包版本事实：`pluginVersion` 必须与之一致。 */
+const MANIFEST = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+
 // `pretest` 先构建产物，测试针对它运行（构建脚本只有一种产物）。
 const clientBundle = await readFile(new URL("../lib/client.js", import.meta.url), "utf8");
 
@@ -446,6 +449,10 @@ test("真实产物的每条上报都满足诊断契约，且自带产生它的�
   assert.equal(harness.payloads("attach")[0].dshVersion, "0.2.2-rc.1");
   // 没有 boot 清单时如实报 null，不编一个版本号。
   assert.equal(launch(clientBundle).payloads("attach")[0].dshVersion, null);
+
+  // 插件自己的版本必须由客户端报出来：否则"页面里跑的是哪一版"只能靠猜进程
+  //（本次排障就吃了这个亏）。它来自构建期注入的 package.json 版本。
+  assert.equal(harness.payloads("attach")[0].pluginVersion, MANIFEST.version);
 });
 
 test("停止原因：DSH 0.2 的 entries 事件窗口能读出 turn/end，文案与上报都跟着原因走", () => {
