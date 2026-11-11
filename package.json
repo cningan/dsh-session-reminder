@@ -1,7 +1,7 @@
 {
   "name": "dsh-session-reminder",
   "description": "Attention reminders for waits and stop outcomes across running sessions, delivered by Web or workbench channels.",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "icon": "icon.svg",
   "type": "module",
   "engines": {
